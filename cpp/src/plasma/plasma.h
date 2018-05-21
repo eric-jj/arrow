@@ -99,7 +99,9 @@ enum object_state {
   /// Object was created but not sealed in the local Plasma Store.
   PLASMA_CREATED = 1,
   /// Object is sealed and stored in the local Plasma Store.
-  PLASMA_SEALED
+  PLASMA_SEALED = 2,
+  /// Object is a queue
+  PLASMA_QUEUE = 3
 };
 
 enum object_status {

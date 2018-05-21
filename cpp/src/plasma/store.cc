@@ -235,6 +235,133 @@ int PlasmaStore::create_object(const ObjectID& object_id, int64_t data_size,
   return PlasmaError_OK;
 }
 
+
+// Create a new object queue in the hash table.
+int PlasmaStore::create_queue(const ObjectID& object_id, int64_t data_size,
+                               int64_t metadata_size, int device_num, Client* client,
+                               PlasmaObject* result) {
+  ARROW_LOG(DEBUG) << "creating queue " << object_id.hex();
+  if (store_info_.objects.count(object_id) != 0) {
+    // There is already an object with the same ID in the Plasma Store, so
+    // ignore this requst.
+    return PlasmaError_ObjectExists;
+  }
+  // Try to evict objects until there is enough space.
+  uint8_t* pointer;
+#ifdef PLASMA_GPU
+  std::shared_ptr<CudaBuffer> gpu_handle;
+  std::shared_ptr<CudaContext> context_;
+  if (device_num != 0) {
+    manager_->GetContext(device_num - 1, &context_);
+  }
+#endif
+  while (true) {
+    // Allocate space for the new object. We use dlmemalign instead of dlmalloc
+    // in order to align the allocated region to a 64-byte boundary. This is not
+    // strictly necessary, but it is an optimization that could speed up the
+    // computation of a hash of the data (see compute_object_hash_parallel in
+    // plasma_client.cc). Note that even though this pointer is 64-byte aligned,
+    // it is not guaranteed that the corresponding pointer in the client will be
+    // 64-byte aligned, but in practice it often will be.
+    if (device_num == 0) {
+      pointer =
+          reinterpret_cast<uint8_t*>(dlmemalign(kBlockSize, data_size + metadata_size));
+      if (pointer == NULL) {
+        // Tell the eviction policy how much space we need to create this object.
+        std::vector<ObjectID> objects_to_evict;
+        bool success =
+            eviction_policy_.require_space(data_size + metadata_size, &objects_to_evict);
+        delete_objects(objects_to_evict);
+        // Return an error to the client if not enough space could be freed to
+        // create the object.
+        if (!success) {
+          return PlasmaError_OutOfMemory;
+        }
+      } else {
+        break;
+      }
+    } else {
+#ifdef PLASMA_GPU
+      context_->Allocate(data_size + metadata_size, &gpu_handle);
+      break;
+#endif
+    }
+  }
+  int fd = -1;
+  int64_t map_size = 0;
+  ptrdiff_t offset = 0;
+  if (device_num == 0) {
+    get_malloc_mapinfo(pointer, &fd, &map_size, &offset);
+    assert(fd != -1);
+  }
+  auto entry = std::unique_ptr<ObjectTableEntry>(new ObjectTableEntry());
+  entry->object_id = object_id;
+  entry->info.object_id = object_id.binary();
+  entry->info.data_size = data_size;
+  entry->info.metadata_size = metadata_size;
+  entry->pointer = pointer;
+  // TODO(pcm): Set the other fields.
+  entry->fd = fd;
+  entry->map_size = map_size;
+  entry->offset = offset;
+  entry->state = PLASMA_QUEUE;
+  entry->device_num = device_num;
+#ifdef PLASMA_GPU
+  if (device_num != 0) {
+    gpu_handle->ExportForIpc(&entry->ipc_handle);
+    result->ipc_handle = entry->ipc_handle;
+  }
+#endif
+  QueueHeader *queue_header = reinterpret_cast<QueueHeader*>(entry->offset + entry->pointer);
+  queue_header->cur_seq_id = 0;
+  QueueBlockHeader *queue_block_header = 
+    reinterpret_cast<QueueBlockHeader*>(entry->offset + entry->pointer + sizeof(QueueHeader));
+  memset(queue_block_header, 0, sizeof(QueueBlockHeader));
+  queue_block_header->item_pointer[0] = sizeof(QueueHeader) + sizeof(QueueBlockHeader);
+  queue_header->cur_block_header = queue_block_header;
+  queue_header->firset_block_header = queue_block_header;
+
+  store_info_.objects[object_id] = std::move(entry);
+  result->store_fd = fd;
+  result->data_offset = offset;
+  result->metadata_offset = offset + data_size;
+  result->data_size = data_size;
+  result->metadata_size = metadata_size;
+  result->device_num = device_num;
+  // Notify the eviction policy that this object was created. This must be done
+  // immediately before the call to add_client_to_object_clients so that the
+  // eviction policy does not have an opportunity to evict the object.
+  eviction_policy_.object_created(object_id);
+  // Record that this client is using this object.
+  add_to_client_object_ids(store_info_.objects[object_id].get(), client);
+  return PlasmaError_OK;
+}
+
+int PlasmaStore::push_queue(const ObjectID& object_id, uint8_t* data, int64_t data_size) {
+  ARROW_LOG(DEBUG) << "push queue " << object_id.hex();
+  auto entry = get_object_table_entry(&store_info_, object_id);
+  ARROW_CHECK(entry != NULL);
+  ARROW_CHECK(entry->state == PLASMA_QUEUE);
+  
+  QueueHeader* queue_header = reinterpret_cast<QueueHeader*>(entry->offset + entry->pointer);
+  queue_header->cur_seq_id++;
+  QueueBlockHeader* block_header = queue_header->cur_block_header;
+  auto offset = queue_header->cur_seq_id - block_header->start_seq_id;
+  if (offset > QUEUE_BLOCK_SIZE) {
+    /// Create new block
+  }
+  /// Get the first item start pointer;
+  char* p = reinterpret_cast<char*>(queue_header + 1);
+  memcpy(p + block_header->item_pointer[offset], data, data_size);
+  block_header->item_pointer[offset + 1] = block_header->item_pointer[offset] + data_size;
+
+  // Inform all subscribers that a new object has been sealed.
+  // push_notification(&entry->info);
+
+  // Update all get requests that involve this object.
+  // update_object_get_requests(object_id);
+}
+
 void PlasmaObject_init(PlasmaObject* object, ObjectTableEntry* entry) {
   DCHECK(object != NULL);
   DCHECK(entry != NULL);
