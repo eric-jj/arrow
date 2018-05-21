@@ -56,6 +56,19 @@ struct Client {
   int notification_fd;
 };
 
+static const int32_t QUEUE_BLOCK_SIZE = 1000; 
+
+struct QueueBlockHeader {
+  int32_t start_seq_id;
+  int32_t item_pointer[QUEUE_BLOCK_SIZE + 1];
+};
+
+struct QueueHeader {
+  int32_t cur_seq_id;
+  QueueBlockHeader *firset_block_header;
+  QueueBlockHeader *cur_block_header;
+};
+
 class PlasmaStore {
  public:
   using NotificationMap = std::unordered_map<int, NotificationQueue>;
@@ -93,6 +106,32 @@ class PlasmaStore {
   PlasmaError create_object(const ObjectID& object_id, int64_t data_size,
                             int64_t metadata_size, int device_num, Client* client,
                             PlasmaObject* result);
+
+  /// Create a new queue. The client must do a call to release_object to tell
+  /// the store when it is done with the object.
+  ///
+  /// @param object_id Object ID of the object to be created.
+  /// @param data_size Size in bytes of the object to be created.
+  /// @param metadata_size Size in bytes of the object metadata.
+  /// @param device_num The number of the device where the object is being
+  ///        created.
+  ///        device_num = 0 corresponds to the host,
+  ///        device_num = 1 corresponds to GPU0,
+  ///        device_num = 2 corresponds to GPU1, etc.
+  /// @param client The client that created the object.
+  /// @param result The object that has been created.
+  /// @return One of the following error codes:
+  ///  - PlasmaError_OK, if the object was created successfully.
+  ///  - PlasmaError_ObjectExists, if an object with this ID is already
+  ///    present in the store. In this case, the client should not call
+  ///    plasma_release.
+  ///  - PlasmaError_OutOfMemory, if the store is out of memory and
+  ///    cannot create the object. In this case, the client should not call
+  ///    plasma_release.
+  int create_queue(const ObjectID& object_id, int64_t data_size, int64_t metadata_size,
+                    int device_num, Client* client, PlasmaObject* result);
+
+  int push_queue(const ObjectID& object_id, uint8_t* data, int64_t data_size);
 
   /// Abort a created but unsealed object. If the client is not the
   /// creator, then the abort will fail.
