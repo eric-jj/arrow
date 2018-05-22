@@ -104,6 +104,13 @@ struct PlasmaObjectSpec {
   device_num: int;
 }
 
+enum ObjectType:int {
+  // Normal object.
+  Default,
+  // Queue object.
+  Queue
+}
+
 table PlasmaCreateRequest {
   // ID of the object to be created.
   object_id: string;
@@ -113,6 +120,8 @@ table PlasmaCreateRequest {
   metadata_size: ulong;
   // Device to create buffer on.
   device_num: int;
+  // Type of the object.
+  type: ObjectType;
 }
 
 table CudaHandle {

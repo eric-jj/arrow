@@ -315,6 +315,13 @@ class ARROW_EXPORT PlasmaClient {
   ///         connection to the manager, this is -1.
   int get_manager_fd() const;
 
+  /// Interfaces that are related to Queue.
+  Status CreateQueue(const ObjectID& object_id, int64_t data_size,
+                            const uint8_t* metadata, int64_t metadata_size,
+                            std::shared_ptr<Buffer>* data, int device_num=0);
+
+  Status PushQueue(const ObjectID& object_id, uint8_t* data, int64_t data_size);
+
  private:
   friend class PlasmaBuffer;
   FRIEND_TEST(TestPlasmaStore, GetTest);
