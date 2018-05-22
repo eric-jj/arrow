@@ -72,10 +72,10 @@ Status PlasmaSend(int sock, MessageType message_type, flatbuffers::FlatBufferBui
 // Create messages.
 
 Status SendCreateRequest(int sock, ObjectID object_id, int64_t data_size,
-                         int64_t metadata_size, int device_num) {
+                         int64_t metadata_size, int device_num, ObjectType type) {
   flatbuffers::FlatBufferBuilder fbb;
   auto message = CreatePlasmaCreateRequest(fbb, fbb.CreateString(object_id.binary()),
-                                           data_size, metadata_size, device_num);
+                                           data_size, metadata_size, device_num, type);
   return PlasmaSend(sock, MessageType::PlasmaCreateRequest, &fbb, message);
 }
 

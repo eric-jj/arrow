@@ -98,6 +98,7 @@ class PlasmaStore {
   ///        device_num = 0 corresponds to the host,
   ///        device_num = 1 corresponds to GPU0,
   ///        device_num = 2 corresponds to GPU1, etc.
+  /// @param object_type Type of the object, current supported types are Default and Queue.
   /// @param client The client that created the object.
   /// @param result The object that has been created.
   /// @return One of the following error codes:
@@ -108,33 +109,8 @@ class PlasmaStore {
   ///  - PlasmaError::OutOfMemory, if the store is out of memory and
   ///    cannot create the object. In this case, the client should not call
   ///    plasma_release.
-  PlasmaError create_object(const ObjectID& object_id, int64_t data_size,
-                            int64_t metadata_size, int device_num, Client* client,
-                            PlasmaObject* result);
-
-  /// Create a new queue. The client must do a call to release_object to tell
-  /// the store when it is done with the object.
-  ///
-  /// @param object_id Object ID of the object to be created.
-  /// @param data_size Size in bytes of the object to be created.
-  /// @param metadata_size Size in bytes of the object metadata.
-  /// @param device_num The number of the device where the object is being
-  ///        created.
-  ///        device_num = 0 corresponds to the host,
-  ///        device_num = 1 corresponds to GPU0,
-  ///        device_num = 2 corresponds to GPU1, etc.
-  /// @param client The client that created the object.
-  /// @param result The object that has been created.
-  /// @return One of the following error codes:
-  ///  - PlasmaError_OK, if the object was created successfully.
-  ///  - PlasmaError_ObjectExists, if an object with this ID is already
-  ///    present in the store. In this case, the client should not call
-  ///    plasma_release.
-  ///  - PlasmaError_OutOfMemory, if the store is out of memory and
-  ///    cannot create the object. In this case, the client should not call
-  ///    plasma_release.
-  int create_queue(const ObjectID& object_id, int64_t data_size, int64_t metadata_size,
-                    int device_num, Client* client, PlasmaObject* result);
+  PlasmaError create_object(const ObjectID& object_id, int64_t data_size, int64_t metadata_size,
+                    int device_num, ObjectType object_type, Client* client, PlasmaObject* result);
 
   int push_queue(const ObjectID& object_id, uint8_t* data, int64_t data_size);
 
