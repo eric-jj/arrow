@@ -66,6 +66,7 @@ enum MessageType:int {
   // object store that requested the data. For each transfer, multiple
   // reply messages get sent. Each one contains a fixed number of bytes.
   PlasmaDataReply,
+  PlasmaQueuePushItem,
   // Object notifications.
   PlasmaNotification
 }
@@ -330,4 +331,13 @@ table PlasmaDataReply {
   object_size: ulong;
   // Size of the metadata in bytes.
   metadata_size: ulong;
+}
+
+table PlasmaSubscribeQueueRequest {
+  // SeqID of this item.
+  seq_id: ulong;
+  // New item in the queue.
+  data: string;
+  // Current block offset to the beginning of the queue.
+  block_offset: ulong;
 }
