@@ -320,6 +320,7 @@ int PlasmaStore::create_queue(const ObjectID& object_id, int64_t data_size,
   queue_block_header->item_pointer[0] = sizeof(QueueHeader) + sizeof(QueueBlockHeader);
   queue_header->cur_block_header = queue_block_header;
   queue_header->firset_block_header = queue_block_header;
+  queue_header->cur_boundary = pointer + data_size;
 
   store_info_.objects[object_id] = std::move(entry);
   result->store_fd = fd;
@@ -337,6 +338,26 @@ int PlasmaStore::create_queue(const ObjectID& object_id, int64_t data_size,
   return PlasmaError_OK;
 }
 
+QueueBlockHeader* PlasmaStore::create_new_block(ObjectTableEntry* entry,
+  QueueHeader* queue_header,
+  QueueBlockHeader* block_header,
+  int32_t offset) {
+  auto p = reinterpret_cast<char*>(block_header) + block_header->item_pointer[QUEUE_BLOCK_SIZE];
+
+  auto new_block_header = reinterpret_cast<QueueBlockHeader*>(p);
+  if (new_block_header == nullptr) {
+    auto first_block = queue_header->firset_block_header;
+    if (firse_block.next_block_offset == 0) {
+      /// It means the queue can't contains a block, retun nullptr.
+      return nullptr;
+    }
+    queue_header->first_block = 
+      reinterpret_cast<QueueBlockHeader*>(first_block->next_block_offset + entry->pointer);
+    new_block_header = block_header;
+    new_block_header->cur_boundary = first_block->cur_boundary;
+  }
+}
+
 int PlasmaStore::push_queue(const ObjectID& object_id, uint8_t* data, int64_t data_size) {
   ARROW_LOG(DEBUG) << "push queue " << object_id.hex();
   auto entry = get_object_table_entry(&store_info_, object_id);
@@ -347,11 +368,15 @@ int PlasmaStore::push_queue(const ObjectID& object_id, uint8_t* data, int64_t da
   queue_header->cur_seq_id++;
   QueueBlockHeader* block_header = queue_header->cur_block_header;
   auto offset = queue_header->cur_seq_id - block_header->start_seq_id;
-  if (offset > QUEUE_BLOCK_SIZE) {
+
+  /// Get the first item start pointer;
+  auto p = reinterpret_cast<char*>(queue_header + 1);
+  auto new_end = p + block_header->item_pointer[offset] + data_size;
+  auto queue_end = entry->pointer + entry->data_size;
+
+  if (offset > QUEUE_BLOCK_SIZE || new_end > queue_header->cur_boundary) {
     /// Create new block
   }
-  /// Get the first item start pointer;
-  char* p = reinterpret_cast<char*>(queue_header + 1);
   memcpy(p + block_header->item_pointer[offset], data, data_size);
   block_header->item_pointer[offset + 1] = block_header->item_pointer[offset] + data_size;
 
