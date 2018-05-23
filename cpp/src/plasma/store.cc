@@ -221,6 +221,12 @@ int PlasmaStore::create_object(const ObjectID& object_id, int64_t data_size,
 #endif
 
   if (object_type == ObjectType_Queue) {
+    auto queue_data = new SimpleQueueData;
+    queue_data->pointer = pointer;
+    queue_data->size = data_size;
+    queues_[object_id] = std::unique_ptr<SimpleQueueData>(queue_data);
+
+    /*
     QueueHeader *queue_header = reinterpret_cast<QueueHeader*>(entry->offset + entry->pointer);
     queue_header->cur_seq_id = 0;
     QueueBlockHeader *queue_block_header = 
@@ -230,6 +236,8 @@ int PlasmaStore::create_object(const ObjectID& object_id, int64_t data_size,
     queue_header->cur_block_header = queue_block_header;
     queue_header->firset_block_header = queue_block_header;
     queue_header->cur_boundary = pointer + data_size;
+    */
+   // 
   }
   
   store_info_.objects[object_id] = std::move(entry);
@@ -247,7 +255,7 @@ int PlasmaStore::create_object(const ObjectID& object_id, int64_t data_size,
   add_to_client_object_ids(store_info_.objects[object_id].get(), client);
   return PlasmaError_OK;
 }
-
+/*
 QueueBlockHeader* PlasmaStore::create_new_block(ObjectTableEntry* entry,
   QueueHeader* queue_header,
   QueueBlockHeader* block_header,
@@ -310,6 +318,77 @@ int PlasmaStore::push_queue(const ObjectID& object_id, uint8_t* data, int64_t da
   // Update all get requests that involve this object.
   // update_object_get_requests(object_id);
   return PlasmaError_OK;
+}
+*/
+int PlasmaStore::create_queue_item(const ObjectID& object_id, int64_t data_size, SimpleQueueItemRecord* new_record) {
+  ARROW_LOG(DEBUG) << "push queue " << object_id.hex();
+  auto entry = get_object_table_entry(&store_info_, object_id);
+  ARROW_CHECK(entry != NULL);
+  ARROW_CHECK(entry->state == PLASMA_QUEUE);
+
+  auto it = queues_.find(object_id);
+  ARROW_CHECK(it != queues_.end());
+  auto queue_data = it->second.get();
+
+  new_record->data_size = data_size;
+
+  if (queue_data->queue.empty()) {
+    // 0 - size
+    // compare
+    // append
+    new_record->seq_id = 1;
+    new_record->data_offset = 0;
+    if (data_size > queue_data->size) {
+      return PlasmaError_OutOfMemory;
+    }
+    queue_data->queue.push(*new_record);
+    return PlasmaError_OK;
+
+  } 
+  else {
+    new_record->seq_id = queue_data->queue.back().seq_id + 1;
+    if (queue_data->queue.front().data_offset <= queue_data->queue.back().data_offset) {
+      // last.data_offset + last.data_size  ~ size
+      if (data_size <= queue_data->size - queue_data->queue.back().data_offset - queue_data->queue.back().data_size) {
+        new_record->data_offset = queue_data->queue.back().data_offset + queue_data->queue.back().data_size;
+        queue_data->queue.push(*new_record);
+        return PlasmaError_OK;
+      }
+      new_record->data_offset = 0;
+    } else {
+      // last.data_offset + last.data_size ~ first.data_offset
+      if (data_size <= queue_data->queue.front().data_offset - queue_data->queue.back().data_offset - queue_data->queue.back().data_size) {
+        new_record->data_offset = queue_data->queue.back().data_offset + queue_data->queue.back().data_size;
+        queue_data->queue.push(*new_record);
+        return PlasmaError_OK;
+      }
+      new_record->data_offset = queue_data->queue.back().data_offset + queue_data->queue.back().data_size;      
+    }
+
+    // Need to evict some items.
+
+    while (!queue_data->queue.empty()) {
+       queue_data->queue.pop();
+       int64_t next_start = 0;
+       if (queue_data->queue.empty()) {
+         new_record->data_offset = 0;
+         next_start = queue_data->size;
+       } else {
+   
+         next_start = queue_data->queue.front().data_offset;
+         if (next_start == 0) {
+           next_start  = queue_data->size;
+         }  
+       }
+       if (data_size <= next_start - new_record->data_offset) {
+         queue_data->queue.push(*new_record);
+         return PlasmaError_OK;         
+       }
+    }
+
+    return PlasmaError_OutOfMemory;
+
+  }
 }
 
 void PlasmaObject_init(PlasmaObject* object, ObjectTableEntry* entry) {
@@ -752,11 +831,11 @@ Status PlasmaStore::process_message(Client* client) {
       int64_t data_size;
       int64_t metadata_size;
       int device_num;
-      ObjectType type;
+      ObjectType object_type;
       RETURN_NOT_OK(ReadCreateRequest(input, input_size, &object_id, &data_size,
-                                      &metadata_size, &device_num, &type));
+                                      &metadata_size, &device_num, &object_type));
       int error_code =
-          create_object(object_id, data_size, metadata_size, device_num, type, client, &object);
+          create_object(object_id, data_size, metadata_size, device_num, object_type, client, &object);
       int64_t mmap_size = 0;
       if (error_code == PlasmaError_OK && device_num == 0) {
         mmap_size = get_mmap_size(object.store_fd);
@@ -824,6 +903,20 @@ Status PlasmaStore::process_message(Client* client) {
       ARROW_LOG(DEBUG) << "Disconnecting client on fd " << client->fd;
       disconnect_client(client->fd);
       break;
+      
+    case MessageType_PlasmaPushQueueItemRequest: {
+      int64_t data_size;
+      SimpleQueueItemRecord record;
+      RETURN_NOT_OK(ReadPushQueueItemRequest(input, input_size, &object_id, &data_size));
+      int error_code =
+          create_queue_item(object_id, data_size, &record);
+
+      HANDLE_SIGPIPE(
+          SendPushQueueItemReply(client->fd, object_id, record.data_offset, record.data_size, record.seq_id, error_code),
+          client->fd);
+
+    } break; 
+
     default:
       // This code should be unreachable.
       ARROW_CHECK(0);

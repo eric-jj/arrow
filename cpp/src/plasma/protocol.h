@@ -46,7 +46,7 @@ Status SendCreateRequest(int sock, ObjectID object_id, int64_t data_size,
                          int64_t metadata_size, int device_num, ObjectType object_type);
 
 Status ReadCreateRequest(uint8_t* data, size_t size, ObjectID* object_id,
-                         int64_t* data_size, int64_t* metadata_size, int* device_num);
+                         int64_t* data_size, int64_t* metadata_size, int* device_num, ObjectType* object_type);
 
 Status SendCreateReply(int sock, ObjectID object_id, PlasmaObject* object, int error,
                        int64_t mmap_size);
@@ -192,6 +192,17 @@ Status SendDataReply(int sock, ObjectID object_id, int64_t object_size,
 
 Status ReadDataReply(uint8_t* data, size_t size, ObjectID* object_id,
                      int64_t* object_size, int64_t* metadata_size);
+
+// PushQueue messages 
+Status SendPushQueueItemRequest(int sock, ObjectID object_id, int64_t data_size);
+
+Status ReadPushQueueItemRequest(uint8_t* data, size_t size, ObjectID* object_id, int64_t* data_size);
+
+Status SendPushQueueItemReply(int sock, ObjectID object_id, uint64_t data_offset, uint64_t data_size,
+  uint64_t seq_id, int error_code);
+
+Status ReadPushQueueItemReply(uint8_t* data, size_t size, ObjectID* object_id,
+  uint64_t* data_offset, uint64_t* data_size, uint64_t* seq_id);                      
 
 }  // namespace plasma
 

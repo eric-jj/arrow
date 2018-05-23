@@ -78,19 +78,22 @@ TEST(PlasmaSerialization, CreateRequest) {
   int64_t data_size1 = 42;
   int64_t metadata_size1 = 11;
   int device_num1 = 0;
+  ObjectType object_type1 = ObjectType_Default;
   ARROW_CHECK_OK(
-      SendCreateRequest(fd, object_id1, data_size1, metadata_size1, device_num1));
+      SendCreateRequest(fd, object_id1, data_size1, metadata_size1, device_num1, object_type1));
   std::vector<uint8_t> data = read_message_from_file(fd, MessageType_PlasmaCreateRequest);
   ObjectID object_id2;
   int64_t data_size2;
   int64_t metadata_size2;
   int device_num2;
+  ObjectType object_type2;
   ARROW_CHECK_OK(ReadCreateRequest(data.data(), data.size(), &object_id2, &data_size2,
-                                   &metadata_size2, &device_num2));
+                                   &metadata_size2, &device_num2, &object_type2));
   ASSERT_EQ(data_size1, data_size2);
   ASSERT_EQ(metadata_size1, metadata_size2);
   ASSERT_EQ(object_id1, object_id2);
   ASSERT_EQ(device_num1, device_num2);
+  ASSERT_EQ(object_type1, object_type2);  
   close(fd);
 }
 
