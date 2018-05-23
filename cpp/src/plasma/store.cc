@@ -317,7 +317,7 @@ int PlasmaStore::create_queue(const ObjectID& object_id, int64_t data_size,
   QueueBlockHeader *queue_block_header = 
     reinterpret_cast<QueueBlockHeader*>(entry->offset + entry->pointer + sizeof(QueueHeader));
   memset(queue_block_header, 0, sizeof(QueueBlockHeader));
-  queue_block_header->item_pointer[0] = sizeof(QueueHeader) + sizeof(QueueBlockHeader);
+  queue_block_header->item_offsets[0] = sizeof(QueueBlockHeader);
   queue_header->cur_block_header = queue_block_header;
   queue_header->firset_block_header = queue_block_header;
   queue_header->cur_boundary = pointer + data_size;
@@ -342,7 +342,7 @@ QueueBlockHeader* PlasmaStore::create_new_block(ObjectTableEntry* entry,
   QueueHeader* queue_header,
   QueueBlockHeader* block_header,
   int32_t offset) {
-  auto p = reinterpret_cast<char*>(block_header) + block_header->item_pointer[QUEUE_BLOCK_SIZE];
+  auto p = reinterpret_cast<char*>(block_header) + block_header->item_offsets[QUEUE_BLOCK_SIZE];
 
   auto new_block_header = reinterpret_cast<QueueBlockHeader*>(p);
   if (new_block_header == nullptr) {
@@ -353,9 +353,20 @@ QueueBlockHeader* PlasmaStore::create_new_block(ObjectTableEntry* entry,
     }
     queue_header->first_block = 
       reinterpret_cast<QueueBlockHeader*>(first_block->next_block_offset + entry->pointer);
-    new_block_header = block_header;
-    new_block_header->cur_boundary = first_block->cur_boundary;
+    if (first_block > block_header) {
+      /// Merge the next block to current block.
+      block_header->cur_boundary = first_block->cur_boundary;
+      return block_header;
+    } else {
+      new_block_header = first_block;
+    }
+  } else {
+    new_block_header->next_block_offset = queue_header->next_block_offset;
   }
+  new_block_header->start_seq_id = new_block_header->cur_seq_id;
+  memset(new_block_header->item_offsets, 0, sizeof(new_block_header->item_offsets));
+  new_block_header->item_offsets[0] = sizeof(QueueBlockHeader);
+  return new_block_header;
 }
 
 int PlasmaStore::push_queue(const ObjectID& object_id, uint8_t* data, int64_t data_size) {
@@ -371,20 +382,24 @@ int PlasmaStore::push_queue(const ObjectID& object_id, uint8_t* data, int64_t da
 
   /// Get the first item start pointer;
   auto p = reinterpret_cast<char*>(queue_header + 1);
-  auto new_end = p + block_header->item_pointer[offset] + data_size;
-  auto queue_end = entry->pointer + entry->data_size;
+  auto new_end = p + block_header->item_offsets[offset] + data_size;
 
   if (offset > QUEUE_BLOCK_SIZE || new_end > queue_header->cur_boundary) {
     /// Create new block
+    block_header = create_new_block(entry, queue_header, block_header, offset);
+    if (block_header == nullptr) {
+      return PlasmaError_OutOfMemory;
+    }
   }
-  memcpy(p + block_header->item_pointer[offset], data, data_size);
-  block_header->item_pointer[offset + 1] = block_header->item_pointer[offset] + data_size;
+  memcpy(p + block_header->item_offsets[offset], data, data_size);
+  block_header->item_offsets[offset + 1] = block_header->item_offsets[offset] + data_size;
 
   // Inform all subscribers that a new object has been sealed.
   // push_notification(&entry->info);
 
   // Update all get requests that involve this object.
   // update_object_get_requests(object_id);
+  return PlasmaError_OK;
 }
 
 void PlasmaObject_init(PlasmaObject* object, ObjectTableEntry* entry) {
