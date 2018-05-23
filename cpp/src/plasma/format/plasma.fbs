@@ -66,6 +66,7 @@ enum MessageType:long {
   // object store that requested the data. For each transfer, multiple
   // reply messages get sent. Each one contains a fixed number of bytes.
   PlasmaDataReply,
+  PlasmaSubscribeQueueRequest,
   PlasmaQueuePushItem,
   // Object notifications.
   PlasmaNotification
@@ -347,6 +348,13 @@ table PlasmaDataReply {
 }
 
 table PlasmaSubscribeQueueRequest {
+  // ID of the object that will be sent.
+  object_id: string;
+}
+
+table PlasmaNewItemRequest {
+  // ID of the object that will be sent.
+  object_id: string;
   // SeqID of this item.
   seq_id: ulong;
   // New item in the queue.

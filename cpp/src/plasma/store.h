@@ -60,8 +60,8 @@ static const int32_t QUEUE_BLOCK_SIZE = 1000;
 
 struct QueueBlockHeader {
   int32_t start_seq_id;
-  int32_t item_pointer[QUEUE_BLOCK_SIZE + 1];
   int64_t next_block_offset;
+  int32_t item_offsets[QUEUE_BLOCK_SIZE + 1];
 };
 
 struct QueueHeader {
