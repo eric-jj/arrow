@@ -145,8 +145,8 @@ void PlasmaStore::add_to_client_object_ids(ObjectTableEntry* entry, Client* clie
 
 // Create a new object buffer in the hash table.
 int PlasmaStore::create_object(const ObjectID& object_id, int64_t data_size,
-                               int64_t metadata_size, int device_num, ObjectType object_type, 
-                               Client* client, PlasmaObject* result) {
+                               int64_t metadata_size, int device_num, Client* client, 
+                               PlasmaObject* result, ObjectType object_type) {
   ARROW_LOG(DEBUG) << "creating object " << object_id.hex();
   if (store_info_.objects.count(object_id) != 0) {
     // There is already an object with the same ID in the Plasma Store, so

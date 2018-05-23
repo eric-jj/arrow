@@ -69,22 +69,6 @@ struct SimpleQueueData {
 
 static const int32_t QUEUE_BLOCK_SIZE = 1000; 
 
-struct QueueBlockHeader {
-  int32_t start_seq_id;
-  int64_t next_block_offset;
-  int32_t item_offsets[QUEUE_BLOCK_SIZE + 1];
-};
-
-struct QueueHeader {
-  int32_t cur_seq_id;
-  QueueBlockHeader *firset_block_header;
-  QueueBlockHeader *cur_block_header;
-  /// When the queue is not full, the boundary is the queue bounary.
-  /// When the queue is full, we will retire a block the next block 
-  /// will be the boundary.
-  void *cur_boundary;
-};
-
 class PlasmaStore {
  public:
   // TODO: PascalCase PlasmaStore methods.
@@ -119,7 +103,7 @@ class PlasmaStore {
   ///    cannot create the object. In this case, the client should not call
   ///    plasma_release.
   int create_object(const ObjectID& object_id, int64_t data_size, int64_t metadata_size,
-                    int device_num, ObjectType object_type, Client* client, PlasmaObject* result);
+                    int device_num, Client* client, PlasmaObject* result, ObjectType object_type = ObjectType_Default);
 
 
   QueueBlockHeader* create_new_block(ObjectTableEntry* entry, QueueHeader* queue_header,
