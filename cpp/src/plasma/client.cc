@@ -995,6 +995,59 @@ Status PlasmaClient::Impl::Wait(int64_t num_object_requests,
   return Status::OK();
 }
 
+table PlasmaQueuePushItemRequest {
+  // ID of the object to be created.
+  object_id: string;
+  // The size of the object's data in bytes.
+  data_size: ulong;
+}
+
+table PlasmaQueuePushItemReply {
+  // ID of the object that was created.
+  object_id: string;
+  // The offset in bytes in the memory mapped file of the data.
+  data_offset: ulong;
+  // The size in bytes of the data.
+  data_size: ulong;  
+  // Error that occurred for this call.
+  error: PlasmaError;
+  // The file descriptor in the store that corresponds to the file descriptor
+  // being sent to the client right after this message.
+  store_fd: int;
+  // The size in bytes of the segment for the store file descriptor (needed to
+  // call mmap).
+  mmap_size: long;
+}
+
+Status PlasmaClient::Impl::PushQueue(const ObjectID& object_id, uint8_t* data, int64_t data_size) {
+  ARROW_LOG(DEBUG) << "called plasma_create on conn " << store_conn_ << " with size "
+                   << data_size << " and metadata size " << metadata_size;
+  RETURN_NOT_OK(
+      SendPushQueueItemRequest(store_conn_, object_id, data_size));
+  std::vector<uint8_t> buffer;
+  RETURN_NOT_OK(PlasmaReceive(store_conn_, MessageType_PlasmaPushQueueItemReply, &buffer));
+  ObjectID id;
+  uint64_t data_offset;
+  uint64_t returned_data_size;
+  int store_fd;
+  int64_t mmap_size;
+  RETURN_NOT_OK(
+      ReadPushQueueItemReply(buffer.data(), buffer.size(), &id, &data_offset, &returned_data_size, &store_fd, &mmap_size));
+  // If the CreateReply included an error, then the store will not send a file
+  // descriptor.
+  // if (device_num == 0) { // TODO should we handle GPU case?
+  ARROW_CHECK(returned_data_size == data_size);
+
+  auto entry = mmap_table_.find(store_fd);
+  if (entry == mmap_table_.end()) {
+    return Status::PlasmaObjectNonexistent("object does not exist in the plasma store");
+  }
+
+  // Get the pointer in PlasmaStore, write the data.  
+  memcpy(entry->pointer + data_offset, data, data_size);
+
+  return Status::OK();
+}
 // ----------------------------------------------------------------------
 // PlasmaClient
 
