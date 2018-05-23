@@ -56,8 +56,8 @@ static const int32_t QUEUE_BLOCK_SIZE = 1000;
 
 struct QueueBlockHeader {
   int32_t start_seq_id;
-  int32_t item_pointer[QUEUE_BLOCK_SIZE + 1];
   int64_t next_block_offset;
+  int32_t item_offsets[QUEUE_BLOCK_SIZE + 1];
 };
 
 struct QueueHeader {
@@ -105,6 +105,10 @@ class PlasmaStore {
   ///    plasma_release.
   int create_object(const ObjectID& object_id, int64_t data_size, int64_t metadata_size,
                     int device_num, ObjectType object_type, Client* client, PlasmaObject* result);
+
+
+  QueueBlockHeader* create_new_block(ObjectTableEntry* entry, QueueHeader* queue_header,
+                                     QueueBlockHeader* block_header, int32_t offset);
 
   int push_queue(const ObjectID& object_id, uint8_t* data, int64_t data_size);
 
