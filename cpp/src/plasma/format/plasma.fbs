@@ -122,7 +122,7 @@ table PlasmaCreateRequest {
   // Device to create buffer on.
   device_num: int;
   // Type of the object.
-  type: ObjectType;
+  object_type: ObjectType;
 }
 
 table CudaHandle {
@@ -348,7 +348,7 @@ table PlasmaDataReply {
 }
 
 table PlasmaSubscribeQueueRequest {
-  // ID of the object that will be sent.
+    // ID of the object that will be sent.
   object_id: string;
 }
 
@@ -363,26 +363,22 @@ table PlasmaNewItemRequest {
   block_offset: ulong;
 }
 
-table PlasmaQueuePushItemRequest {
+table PlasmaPushQueueItemRequest {
   // ID of the object to be created.
   object_id: string;
   // The size of the object's data in bytes.
   data_size: ulong;
 }
 
-table PlasmaQueuePushItemReply {
+table PlasmaPushQueueItemReply {
   // ID of the object that was created.
   object_id: string;
   // The offset in bytes in the memory mapped file of the data.
   data_offset: ulong;
   // The size in bytes of the data.
-  data_size: ulong;  
+  data_size: ulong; 
+  // SeqID for this item.
+  seq_id: ulong;
   // Error that occurred for this call.
   error: PlasmaError;
-  // The file descriptor in the store that corresponds to the file descriptor
-  // being sent to the client right after this message.
-  store_fd: int;
-  // The size in bytes of the segment for the store file descriptor (needed to
-  // call mmap).
-  mmap_size: long;
 }

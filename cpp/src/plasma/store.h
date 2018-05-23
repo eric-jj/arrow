@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <queue>
 
 #include "plasma/common.h"
 #include "plasma/events.h"
@@ -54,6 +55,20 @@ struct Client {
   /// The file descriptor used to push notifications to client. This is only valid
   /// if client subscribes to plasma store. -1 indicates invalid.
   int notification_fd;
+};
+
+struct SimpleQueueItemRecord {
+  SimpleQueueItemRecord() : seq_id(0), data_offset(0), data_size(0) {}
+  uint64_t seq_id;
+  uint64_t data_offset;
+  uint32_t data_size;
+};
+
+struct SimpleQueueData {
+  uint8_t* pointer;
+  uint64_t size;
+
+  std::queue<SimpleQueueItemRecord> queue;
 };
 
 static const int32_t QUEUE_BLOCK_SIZE = 1000; 
@@ -113,6 +128,8 @@ class PlasmaStore {
                     int device_num, ObjectType object_type, Client* client, PlasmaObject* result);
 
   int push_queue(const ObjectID& object_id, uint8_t* data, int64_t data_size);
+
+  int create_queue_item(const ObjectID& object_id, int64_t data_size, SimpleQueueItemRecord* new_record);
 
   /// Abort a created but unsealed object. If the client is not the
   /// creator, then the abort will fail.
@@ -229,6 +246,8 @@ class PlasmaStore {
 #ifdef PLASMA_GPU
   arrow::gpu::CudaDeviceManager* manager_;
 #endif
+
+  std::unordered_map<ObjectID, std::unique_ptr<SimpleQueueData>> queues_;
 };
 
 }  // namespace plasma
