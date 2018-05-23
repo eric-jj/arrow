@@ -166,7 +166,7 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
                  int num_retries = -1);
 
   Status Create(const ObjectID& object_id, int64_t data_size, const uint8_t* metadata,
-                int64_t metadata_size, std::shared_ptr<Buffer>* data, int device_num = 0);
+                int64_t metadata_size, std::shared_ptr<Buffer>* data, int device_num = 0, ObjectType type = ObjectType_Default);
 
   Status Get(const std::vector<ObjectID>& object_ids, int64_t timeout_ms,
              std::vector<ObjectBuffer>* object_buffers);
@@ -209,6 +209,8 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
   Status FlushReleaseHistory();
 
   bool IsInUse(const ObjectID& object_id);
+
+  Status PushQueue(const ObjectID& object_id, uint8_t* data, int64_t data_size);
 
  private:
   /// This is a helper method for unmapping objects for which all references have
@@ -360,11 +362,11 @@ void PlasmaClient::Impl::increment_object_count(const ObjectID& object_id,
 
 Status PlasmaClient::Impl::Create(const ObjectID& object_id, int64_t data_size,
                                   const uint8_t* metadata, int64_t metadata_size,
-                                  std::shared_ptr<Buffer>* data, int device_num) {
+                                  std::shared_ptr<Buffer>* data, int device_num, ObjectType object_type) {
   ARROW_LOG(DEBUG) << "called plasma_create on conn " << store_conn_ << " with size "
                    << data_size << " and metadata size " << metadata_size;
   RETURN_NOT_OK(
-      SendCreateRequest(store_conn_, object_id, data_size, metadata_size, device_num));
+      SendCreateRequest(store_conn_, object_id, data_size, metadata_size, device_num, object_type));
   std::vector<uint8_t> buffer;
   RETURN_NOT_OK(PlasmaReceive(store_conn_, MessageType_PlasmaCreateReply, &buffer));
   ObjectID id;
@@ -1081,6 +1083,12 @@ Status PlasmaClient::FlushReleaseHistory() { return impl_->FlushReleaseHistory()
 
 bool PlasmaClient::IsInUse(const ObjectID& object_id) {
   return impl_->IsInUse(object_id);
+}
+
+Status PlasmaClient::CreateQueue(const ObjectID& object_id, int64_t data_size,
+                            const uint8_t* metadata, int64_t metadata_size,
+                            std::shared_ptr<Buffer>* data, int device_num) {
+  return impl_->Create(object_id, data_size, metadata, metadata_size, data, device_num, ObjectType_Queue);
 }
 
 }  // namespace plasma
