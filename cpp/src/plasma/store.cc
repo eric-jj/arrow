@@ -835,7 +835,7 @@ Status PlasmaStore::process_message(Client* client) {
       RETURN_NOT_OK(ReadCreateRequest(input, input_size, &object_id, &data_size,
                                       &metadata_size, &device_num, &object_type));
       int error_code =
-          create_object(object_id, data_size, metadata_size, device_num, object_type, client, &object);
+          create_object(object_id, data_size, metadata_size, device_num, client, &object, object_type);
       int64_t mmap_size = 0;
       if (error_code == PlasmaError_OK && device_num == 0) {
         mmap_size = get_mmap_size(object.store_fd);

@@ -105,12 +105,6 @@ class PlasmaStore {
   int create_object(const ObjectID& object_id, int64_t data_size, int64_t metadata_size,
                     int device_num, Client* client, PlasmaObject* result, ObjectType object_type = ObjectType_Default);
 
-
-  QueueBlockHeader* create_new_block(ObjectTableEntry* entry, QueueHeader* queue_header,
-                                     QueueBlockHeader* block_header, int32_t offset);
-
-  int push_queue(const ObjectID& object_id, uint8_t* data, int64_t data_size);
-
   int create_queue_item(const ObjectID& object_id, int64_t data_size, SimpleQueueItemRecord* new_record);
 
   /// Abort a created but unsealed object. If the client is not the
