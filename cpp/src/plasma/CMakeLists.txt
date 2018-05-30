@@ -77,6 +77,7 @@ set(PLASMA_SRCS
   io.cc
   malloc.cc
   plasma.cc
+  plasma_queue.cc
   protocol.cc
   thirdparty/ae/ae.c
   thirdparty/xxhash.cc)
