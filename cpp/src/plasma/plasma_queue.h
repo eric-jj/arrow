@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <algorithm>
 
 #include "arrow/buffer.h"
 #include "arrow/status.h"
@@ -65,8 +66,8 @@ namespace plasma {
 
       // Account for the space occupied by QueueBlockHeader. The item offsets 
       // are relative to the start of this block.
-      memset(item_offsets, sizeof(QueueBlockHeader), sizeof(item_offsets));
-
+      auto start_offset_in_block = sizeof(QueueBlockHeader);
+      std::fill_n(item_offsets, sizeof(item_offsets)/sizeof(uint32_t), start_offset_in_block);
     }
     
     // Start seq ID of this block.
@@ -120,7 +121,7 @@ namespace plasma {
 
     //int Get(uint8_t*& data, uint32_t& data_size /*, uint64_t* seq_id */);
     
-    int GetNext(uint8_t* data, uint32_t& data_size, uint64_t& seq_id);
+    int GetNext(uint8_t*& data, uint32_t& data_size, uint64_t& seq_id);
 
     int SetStartSeqId(uint64_t seq_id);
     

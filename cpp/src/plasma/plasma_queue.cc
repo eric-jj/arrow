@@ -105,11 +105,10 @@ bool PlasmaQueueWriter::FindStartOffset(uint32_t data_size, uint64_t& new_start_
 }
 
 bool PlasmaQueueWriter::Allocate(uint64_t& start_offset, uint32_t data_size) {
-  if (start_offset > queue_header_->first_block_offset) {
-    // This indicates it's ok to append the new item to the end of last block. Note the case
-    // when the space at the end of the buffer is insufficient has already been handled
-    // in FindStartOffset().
-    return true;
+  if (queue_header_->first_block_offset == INVALID_OFFSET ||
+     start_offset > queue_header_->first_block_offset) {
+    // Check if there are enough space at the end of the buffer.
+    return start_offset + data_size <= buffer_size_;
   }
 
   if (start_offset + data_size <= queue_header_->first_block_offset) {
@@ -286,7 +285,7 @@ int PlasmaQueueReader::SetStartSeqId(uint64_t seq_id) {
   return PlasmaError_ObjectNonexistent; 
 }
 
-int PlasmaQueueReader::GetNext(uint8_t* data, uint32_t& data_size, uint64_t& seq_id) {
+int PlasmaQueueReader::GetNext(uint8_t*& data, uint32_t& data_size, uint64_t& seq_id) {
   
   // Check if still in current block. 
   // if not, move to next block. Add refcnt to next block, and release refcnt to current block.
@@ -305,6 +304,7 @@ int PlasmaQueueReader::GetNext(uint8_t* data, uint32_t& data_size, uint64_t& seq
     auto index = 0;
     data = reinterpret_cast<uint8_t*>(curr_block_header_) + curr_block_header_->item_offsets[index];
     data_size = curr_block_header_->item_offsets[index + 1] - curr_block_header_->item_offsets[index];
+    curr_seq_id_ = curr_block_header_->start_seq_id;
     seq_id = curr_seq_id_++;
     curr_block_header_->ref_count++; // will be released when client release the item.
     outstanding_seq_ids_[seq_id] = curr_block_header_;
