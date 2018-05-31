@@ -40,6 +40,7 @@
 #include <deque>
 #include <mutex>
 #include <unordered_map>
+#include <memory>
 #include <vector>
 
 #include "arrow/buffer.h"
@@ -51,6 +52,7 @@
 #include "plasma/malloc.h"
 #include "plasma/plasma.h"
 #include "plasma/protocol.h"
+#include "plasma/plasma_queue.h"
 
 #ifdef PLASMA_GPU
 #include "arrow/gpu/cuda_api.h"
@@ -1087,9 +1089,77 @@ bool PlasmaClient::IsInUse(const ObjectID& object_id) {
 }
 
 Status PlasmaClient::CreateQueue(const ObjectID& object_id, int64_t data_size,
-                            const uint8_t* metadata, int64_t metadata_size,
                             std::shared_ptr<Buffer>* data, int device_num) {
-  return impl_->Create(object_id, data_size, metadata, metadata_size, data, device_num, ObjectType_Queue);
+  auto status = impl_->Create(object_id, data_size, nullptr, 0, data, device_num, ObjectType_Queue);
+  if (!status.ok()) {
+    return status;
+  }
+
+  std::unique_ptr<PlasmaQueueWriter> queue_writer(new PlasmaQueueWriter(const_cast<uint8_t*>((*data)->data()), data_size));
+  queue_writers_.insert({object_id, std::move(queue_writer)});
+
+  status = impl_->Seal(object_id);
+  
+  return status;
+  
+}
+
+Status PlasmaClient::GetQueue(const ObjectID& object_id, int64_t timeout_ms, uint64_t start_seq_id) {
+  if (queue_readers_.find(object_id) != queue_readers_.end()) {
+    return Status::OK();
+  }
+  
+  std::vector<ObjectID> object_ids;
+  object_ids.push_back(object_id);
+  std::vector<ObjectBuffer> object_buffers;
+  auto status = impl_->Get(object_ids, timeout_ms, &object_buffers);
+  // TODO:  should check if it's indeed a Plama Queue.
+  if (!status.ok()) {
+    return status;
+  }
+ 
+  auto buff = object_buffers[0].data;
+  std::unique_ptr<PlasmaQueueReader> queue_reader(new PlasmaQueueReader(const_cast<uint8_t*>(buff->data()), buff->size()));
+  queue_readers_.insert({object_id, std::move(queue_reader)});
+
+  queue_buffer_refs_.insert({object_id, buff});
+  
+  int ret = PlasmaError_OK;
+  if (start_seq_id != 0) {
+    ret = queue_reader->SetStartSeqId(start_seq_id);
+  }
+
+  return plasma_error_status(ret);  
+}
+
+Status PlasmaClient::PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size) {
+  auto it = queue_writers_.find(object_id);
+  if (it == queue_writers_.end()) {
+    return Status::PlasmaObjectNonexistent("queue doesn't exist");
+  }
+
+  auto ret = it->second->Append(data, data_size);
+  return plasma_error_status(ret);
+}
+
+Status PlasmaClient::GetQueueItem(const ObjectID& object_id, uint8_t*& data, uint32_t& data_size, uint64_t& seq_id) {
+  auto status = GetQueue(object_id, 10000); // TODO: start_seq_id is set to zero.
+  if (!status.ok()) {
+    return status;
+  }
+
+  auto ret = queue_readers_[object_id]->GetNext(data, data_size, seq_id);
+  return plasma_error_status(ret);
+}
+
+Status PlasmaClient::ReleaseQueueItem(const ObjectID& object_id, uint64_t seq_id) {
+  auto status = GetQueue(object_id, 10000); // TODO: start_seq_id is set to zero.
+  if (!status.ok()) {
+    return status;
+  }
+
+  auto ret = queue_readers_[object_id]->Release(seq_id);
+  return plasma_error_status(ret);
 }
 
 }  // namespace plasma

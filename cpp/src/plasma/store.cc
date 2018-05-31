@@ -211,7 +211,8 @@ int PlasmaStore::create_object(const ObjectID& object_id, int64_t data_size,
   entry->fd = fd;
   entry->map_size = map_size;
   entry->offset = offset;
-  entry->state = (object_type == ObjectType_Queue) ? PLASMA_QUEUE : PLASMA_CREATED;
+  // entry->state = (object_type == ObjectType_Queue) ? PLASMA_QUEUE : PLASMA_CREATED;
+  entry->state = PLASMA_CREATED;
   entry->device_num = device_num;
 #ifdef PLASMA_GPU
   if (device_num != 0) {
@@ -324,7 +325,7 @@ int PlasmaStore::create_queue_item(const ObjectID& object_id, int64_t data_size,
   ARROW_LOG(DEBUG) << "push queue " << object_id.hex();
   auto entry = get_object_table_entry(&store_info_, object_id);
   ARROW_CHECK(entry != NULL);
-  ARROW_CHECK(entry->state == PLASMA_QUEUE);
+  // ARROW_CHECK(entry->state == PLASMA_QUEUE);
 
   auto it = queues_.find(object_id);
   ARROW_CHECK(it != queues_.end());

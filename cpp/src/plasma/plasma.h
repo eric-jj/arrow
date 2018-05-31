@@ -101,7 +101,7 @@ enum object_state {
   /// Object is sealed and stored in the local Plasma Store.
   PLASMA_SEALED = 2,
   /// Object is a queue
-  PLASMA_QUEUE = 3
+  // PLASMA_QUEUE = 3
 };
 
 enum object_status {
