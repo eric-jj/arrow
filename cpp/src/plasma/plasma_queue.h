@@ -92,7 +92,7 @@ namespace plasma {
   public:
     PlasmaQueueWriter(uint8_t* buffer, uint64_t buffer_size);
 
-    int Append(uint8_t* data, uint32_t data_size /*, uint64_t* seq_id */);
+    int Append(uint8_t* data, uint32_t data_size, uint64_t& offset, uint64_t& seq_id);
 
 
   private:

@@ -177,6 +177,8 @@ class PlasmaStore {
   /// @param client The client making this request.
   void subscribe_to_updates(Client* client);
 
+  void subscribe_to_queue_updates(Client* client, const ObjectID& object_id);
+
   /// Connect a new client to the PlasmaStore.
   ///
   /// @param listener_sock The socket that is listening to incoming connections.
@@ -189,12 +191,16 @@ class PlasmaStore {
 
   NotificationMap::iterator send_notifications(NotificationMap::iterator it);
 
+  void send_notifications(int client_fd, std::unordered_map<int, NotificationQueue>& store_pending_notifications);
+
   Status process_message(Client* client);
 
  private:
   void push_notification(ObjectInfoT* object_notification);
 
   void push_notification(ObjectInfoT* object_notification, int client_fd);
+
+  void push_queue_notification(const ObjectID& object_id, PlasmaQueueItemInfoT* item_info);
 
   void add_to_client_object_ids(ObjectTableEntry* entry, Client* client);
 
@@ -229,7 +235,9 @@ class PlasmaStore {
   arrow::gpu::CudaDeviceManager* manager_;
 #endif
 
-  std::unordered_map<ObjectID, std::unique_ptr<SimpleQueueData>> queues_;
+  typedef std::unordered_map<int, NotificationQueue> ClientNotifications;
+
+  std::unordered_map<ObjectID, ClientNotifications> pending_queue_notifications_;
 };
 
 }  // namespace plasma

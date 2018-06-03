@@ -39,6 +39,7 @@
 #include "arrow/util/macros.h"
 #include "plasma/common.h"
 #include "plasma/common_generated.h"
+#include "plasma/plasma_generated.h"
 
 #ifdef PLASMA_GPU
 #include "arrow/gpu/cuda_api.h"
@@ -188,6 +189,8 @@ ObjectTableEntry* get_object_table_entry(PlasmaStoreInfo* store_info,
 int warn_if_sigpipe(int status, int client_sock);
 
 std::unique_ptr<uint8_t[]> create_object_info_buffer(ObjectInfoT* object_info);
+
+std::unique_ptr<uint8_t[]> create_queue_item_buffer(PlasmaQueueItemInfoT* item_info);
 
 }  // namespace plasma
 
