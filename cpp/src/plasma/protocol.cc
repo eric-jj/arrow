@@ -580,6 +580,21 @@ Status SendSubscribeRequest(int sock) {
   return PlasmaSend(sock, MessageType_PlasmaSubscribeRequest, &fbb, message);
 }
 
+Status SendQueueSubscribeRequest(int sock, const ObjectID& object_id) {
+  flatbuffers::FlatBufferBuilder fbb;
+  auto message = CreatePlasmaQueueSubscribeRequest(fbb, fbb.CreateString(object_id.binary()));
+  return PlasmaSend(sock, MessageType_PlasmaQueueSubscribeRequest, &fbb, message);
+}
+
+Status ReadQueueSubscribeRequest(uint8_t* data, size_t size, ObjectID* object_id) {
+  DCHECK(data);
+  auto message = flatbuffers::GetRoot<PlasmaQueueSubscribeRequest>(data);
+  DCHECK(verify_flatbuffer(message, data, size));
+  DCHECK(message->object_id()->size() == sizeof(ObjectID));
+  *object_id = ObjectID::from_binary(message->object_id()->str());
+  return Status::OK();
+}
+
 // Data messages.
 
 Status SendDataRequest(int sock, ObjectID object_id, const char* address, int port) {
@@ -669,5 +684,27 @@ Status ReadPushQueueItemReply(uint8_t* data, size_t size, ObjectID* object_id,
 
   return plasma_error_status(message->error());
 }
+
+Status SendQueueItemInfo(int sock, ObjectID object_id, uint64_t seq_id, uint64_t offset, uint32_t data_size) {  
+   flatbuffers::FlatBufferBuilder fbb;
+   auto message =
+      CreatePlasmaQueueItemInfo(fbb, fbb.CreateString(object_id.binary()), -1, seq_id, offset, data_size); 
+
+  return PlasmaSend(sock, MessageType_PlasmaQueueItemInfo, &fbb, message);
+}
+
+Status ReadQueueItemInfo(uint8_t* data, size_t size, PlasmaQueueItemInfoT* item_info) {
+  DCHECK(data);
+  auto message = flatbuffers::GetRoot<PlasmaQueueItemInfo>(data);
+  DCHECK(verify_flatbuffer(message, data, size));
+  item_info->object_id = message->object_id()->str();
+  item_info->segment_index = message->segment_index();
+  item_info->seq_id = message->seq_id();
+  item_info->data_offset = message->data_offset();
+  item_info->data_size = message->data_size();
+  
+  return Status::OK();
+}
+
 
 }  // namespace plasma

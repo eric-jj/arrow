@@ -222,11 +222,14 @@ int PlasmaStore::create_object(const ObjectID& object_id, int64_t data_size,
 #endif
 
   if (object_type == ObjectType_Queue) {
+    pending_queue_notifications_[object_id];
+
+/*
     auto queue_data = new SimpleQueueData;
     queue_data->pointer = pointer;
     queue_data->size = data_size;
     queues_[object_id] = std::unique_ptr<SimpleQueueData>(queue_data);
-
+*/
     /*
     QueueHeader *queue_header = reinterpret_cast<QueueHeader*>(entry->offset + entry->pointer);
     queue_header->cur_seq_id = 0;
@@ -321,76 +324,6 @@ int PlasmaStore::push_queue(const ObjectID& object_id, uint8_t* data, int64_t da
   return PlasmaError_OK;
 }
 */
-int PlasmaStore::create_queue_item(const ObjectID& object_id, int64_t data_size, SimpleQueueItemRecord* new_record) {
-  ARROW_LOG(DEBUG) << "push queue " << object_id.hex();
-  auto entry = get_object_table_entry(&store_info_, object_id);
-  ARROW_CHECK(entry != NULL);
-  // ARROW_CHECK(entry->state == PLASMA_QUEUE);
-
-  auto it = queues_.find(object_id);
-  ARROW_CHECK(it != queues_.end());
-  auto queue_data = it->second.get();
-
-  new_record->data_size = data_size;
-
-  if (queue_data->queue.empty()) {
-    // 0 - size
-    // compare
-    // append
-    new_record->seq_id = 1;
-    new_record->data_offset = 0;
-    if (data_size > queue_data->size) {
-      return PlasmaError_OutOfMemory;
-    }
-    queue_data->queue.push(*new_record);
-    return PlasmaError_OK;
-
-  } 
-  else {
-    new_record->seq_id = queue_data->queue.back().seq_id + 1;
-    if (queue_data->queue.front().data_offset <= queue_data->queue.back().data_offset) {
-      // last.data_offset + last.data_size  ~ size
-      if (data_size <= queue_data->size - queue_data->queue.back().data_offset - queue_data->queue.back().data_size) {
-        new_record->data_offset = queue_data->queue.back().data_offset + queue_data->queue.back().data_size;
-        queue_data->queue.push(*new_record);
-        return PlasmaError_OK;
-      }
-      new_record->data_offset = 0;
-    } else {
-      // last.data_offset + last.data_size ~ first.data_offset
-      if (data_size <= queue_data->queue.front().data_offset - queue_data->queue.back().data_offset - queue_data->queue.back().data_size) {
-        new_record->data_offset = queue_data->queue.back().data_offset + queue_data->queue.back().data_size;
-        queue_data->queue.push(*new_record);
-        return PlasmaError_OK;
-      }
-      new_record->data_offset = queue_data->queue.back().data_offset + queue_data->queue.back().data_size;      
-    }
-
-    // Need to evict some items.
-
-    while (!queue_data->queue.empty()) {
-       queue_data->queue.pop();
-       int64_t next_start = 0;
-       if (queue_data->queue.empty()) {
-         new_record->data_offset = 0;
-         next_start = queue_data->size;
-       } else {
-   
-         next_start = queue_data->queue.front().data_offset;
-         if (next_start == 0) {
-           next_start  = queue_data->size;
-         }  
-       }
-       if (data_size <= next_start - new_record->data_offset) {
-         queue_data->queue.push(*new_record);
-         return PlasmaError_OK;         
-       }
-    }
-
-    return PlasmaError_OutOfMemory;
-
-  }
-}
 
 void PlasmaObject_init(PlasmaObject* object, ObjectTableEntry* entry) {
   DCHECK(object != NULL);
@@ -729,8 +662,9 @@ void PlasmaStore::disconnect_client(int client_fd) {
 /// buffered, and this will be called again when the send buffer has room.
 ///
 /// @param client_fd The client to send the notification to.
-void PlasmaStore::send_notifications(int client_fd) {
-  auto& notifications = pending_notifications_[client_fd].object_notifications;
+void PlasmaStore::send_notifications(int client_fd, 
+  std::unordered_map<int, NotificationQueue>& store_pending_notifications) {
+  auto& notifications = store_pending_notifications[client_fd].object_notifications;
 
   int num_processed = 0;
   bool closed = false;
@@ -755,8 +689,8 @@ void PlasmaStore::send_notifications(int client_fd) {
       // at the end of the method.
       // TODO(pcm): Introduce status codes and check in case the file descriptor
       // is added twice.
-      loop_->AddFileEvent(client_fd, kEventLoopWrite, [this, client_fd](int events) {
-        send_notifications(client_fd);
+      loop_->AddFileEvent(client_fd, kEventLoopWrite, [this, client_fd, &store_pending_notifications](int events) {
+        send_notifications(client_fd, store_pending_notifications);
       });
       break;
     } else {
@@ -779,7 +713,7 @@ void PlasmaStore::send_notifications(int client_fd) {
   // Stop sending notifications if the pipe was broken.
   if (closed) {
     close(client_fd);
-    pending_notifications_.erase(client_fd);
+    store_pending_notifications.erase(client_fd);
   }
 }
 
@@ -787,7 +721,7 @@ void PlasmaStore::push_notification(ObjectInfoT* object_info) {
   for (auto& element : pending_notifications_) {
     auto notification = create_object_info_buffer(object_info);
     element.second.object_notifications.emplace_back(std::move(notification));
-    send_notifications(element.first);
+    send_notifications(element.first, pending_notifications_);
   }
 }
 
@@ -811,7 +745,45 @@ void PlasmaStore::subscribe_to_updates(Client* client) {
   for (const auto& entry : store_info_.objects) {
     push_notification(&entry.second->info);
   }
+  send_notifications(fd, pending_notifications_);
+}
+
+void PlasmaStore::push_queue_notification(const ObjectID& object_id, PlasmaQueueItemInfoT* item_info) {
+  for (auto& element : pending_queue_notifications_[object_id]) {
+    auto notification = create_queue_item_buffer(item_info);
+    element.second.object_notifications.emplace_back(std::move(notification));
+    send_notifications(element.first, pending_queue_notifications_[object_id]);
+  }
+}
+
+// Subscribe to notifications about sealed objects.
+void PlasmaStore::subscribe_to_queue_updates(Client* client, const ObjectID& object_id) {
+  ARROW_LOG(DEBUG) << "subscribing to updates on fd " << client->fd;
+  // TODO(rkn): The store could block here if the client doesn't send a file
+  // descriptor.
+  int fd = recv_fd(client->fd);
+  if (fd < 0) {
+    // This may mean that the client died before sending the file descriptor.
+    ARROW_LOG(WARNING) << "Failed to receive file descriptor from client on fd "
+                       << client->fd << ".";
+    return;
+  }
+
+  pending_queue_notifications_[object_id];
+  pending_queue_notifications_[object_id][fd];
+
+  ARROW_CHECK(pending_queue_notifications_.find(object_id) != pending_queue_notifications_.end());
+  ARROW_CHECK(pending_queue_notifications_[object_id].find(fd) != pending_queue_notifications_[object_id].end());
+
+  // TODO: push all existing queue items to new subscriber. This requires store
+  // to maintain a list of valid sed ids.
+/*
+  // Push notifications to the new subscriber about existing objects.
+  for (const auto& entry : store_info_.objects) {
+    push_notification(&entry.second->info);
+  }
   send_notifications(fd);
+*/
 }
 
 Status PlasmaStore::process_message(Client* client) {
@@ -825,6 +797,7 @@ Status PlasmaStore::process_message(Client* client) {
   PlasmaObject object;
   // TODO(pcm): Get rid of the following.
   memset(&object, 0, sizeof(object));
+  PlasmaQueueItemInfoT item_info;
 
   // Process the different types of requests.
   switch (type) {
@@ -896,6 +869,11 @@ Status PlasmaStore::process_message(Client* client) {
     case MessageType_PlasmaSubscribeRequest:
       subscribe_to_updates(client);
       break;
+    case MessageType_PlasmaQueueSubscribeRequest:
+      RETURN_NOT_OK(ReadQueueSubscribeRequest(input, input_size, &object_id));
+      subscribe_to_queue_updates(client, object_id);
+      break;
+      
     case MessageType_PlasmaConnectRequest: {
       HANDLE_SIGPIPE(SendConnectReply(client->fd, store_info_.memory_capacity),
                      client->fd);
@@ -904,7 +882,12 @@ Status PlasmaStore::process_message(Client* client) {
       ARROW_LOG(DEBUG) << "Disconnecting client on fd " << client->fd;
       disconnect_client(client->fd);
       break;
+    case MessageType_PlasmaQueueItemInfo:
+      RETURN_NOT_OK(ReadQueueItemInfo(input, input_size, &item_info));
+      push_queue_notification(ObjectID::from_binary(item_info.object_id), &item_info);
+      break;
       
+/*      
     case MessageType_PlasmaPushQueueItemRequest: {
       int64_t data_size;
       SimpleQueueItemRecord record;
@@ -917,7 +900,7 @@ Status PlasmaStore::process_message(Client* client) {
           client->fd);
 
     } break; 
-
+*/
     default:
       // This code should be unreachable.
       ARROW_CHECK(0);

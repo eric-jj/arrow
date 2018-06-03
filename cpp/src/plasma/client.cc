@@ -53,6 +53,7 @@
 #include "plasma/plasma.h"
 #include "plasma/protocol.h"
 #include "plasma/plasma_queue.h"
+#include "plasma/plasma_generated.h"
 
 #ifdef PLASMA_GPU
 #include "arrow/gpu/cuda_api.h"
@@ -193,7 +194,7 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
   Status Subscribe(int* fd);
 
   Status GetNotification(int fd, ObjectID* object_id, int64_t* data_size,
-                         int64_t* metadata_size);
+                         int64_t* metadata_size);                 
 
   Status Disconnect();
 
@@ -212,7 +213,18 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
 
   bool IsInUse(const ObjectID& object_id);
 
-  Status PushQueue(const ObjectID& object_id, uint8_t* data, int64_t data_size);
+  Status CreateQueue(const ObjectID& object_id, int64_t data_size,
+                            std::shared_ptr<Buffer>* data, int device_num=0);
+
+  Status GetQueue(const ObjectID& object_id, int64_t timeout_ms, uint64_t start_seq_id = 0);
+
+  Status PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size);
+
+  Status GetQueueItem(const ObjectID& object_id, uint8_t*& data, uint32_t& data_size, uint64_t& seq_id);
+
+  Status SubscribeQueue(const ObjectID& object_id, int* fd);
+
+  Status GetQueueNotification(int fd, uint64_t* seq_id, uint64_t* data_offset, uint32_t* data_size);
 
  private:
   /// This is a helper method for unmapping objects for which all references have
@@ -274,6 +286,13 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
   /// Cuda Device Manager.
   arrow::gpu::CudaDeviceManager* manager_;
 #endif
+
+  std::unordered_map<ObjectID, std::unique_ptr<PlasmaQueueWriter>> queue_writers_;
+  
+  // Used to hold the reference for buffers returned from GetQueue().
+  std::unordered_map<ObjectID, std::shared_ptr<Buffer>> queue_buffer_refs_;
+
+  std::unordered_map<ObjectID, int> queue_notification_fds_;
 };
 
 PlasmaBuffer::~PlasmaBuffer() { ARROW_UNUSED(client_->Release(object_id_)); }
@@ -875,6 +894,26 @@ Status PlasmaClient::Impl::Subscribe(int* fd) {
   return Status::OK();
 }
 
+Status PlasmaClient::Impl::SubscribeQueue(const ObjectID& object_id, int* fd) {
+  int sock[2];
+  // Create a non-blocking socket pair. This will only be used to send
+  // notifications from the Plasma store to the client.
+  socketpair(AF_UNIX, SOCK_STREAM, 0, sock);
+  // Make the socket non-blocking.
+  int flags = fcntl(sock[1], F_GETFL, 0);
+  ARROW_CHECK(fcntl(sock[1], F_SETFL, flags | O_NONBLOCK) == 0);
+  // Tell the Plasma store about the subscription.
+  RETURN_NOT_OK(SendQueueSubscribeRequest(store_conn_, object_id));
+  // Send the file descriptor that the Plasma store should use to push
+  // notifications about sealed objects to this client.
+  ARROW_CHECK(send_fd(store_conn_, sock[1]) >= 0);
+  close(sock[1]);
+  // Return the file descriptor that the client should use to read notifications
+  // about sealed objects.
+  *fd = sock[0];
+  return Status::OK();
+}
+
 Status PlasmaClient::Impl::GetNotification(int fd, ObjectID* object_id,
                                            int64_t* data_size, int64_t* metadata_size) {
   auto notification = read_message_async(fd);
@@ -891,6 +930,18 @@ Status PlasmaClient::Impl::GetNotification(int fd, ObjectID* object_id,
     *data_size = object_info->data_size();
     *metadata_size = object_info->metadata_size();
   }
+  return Status::OK();
+}
+
+Status PlasmaClient::Impl::GetQueueNotification(int fd, uint64_t* seq_id, uint64_t* data_offset, uint32_t* data_size) {
+  auto notification = read_message_async(fd);
+  if (notification == NULL) {
+    return Status::IOError("Failed to read object notification from Plasma socket");
+  }
+  auto item_info = flatbuffers::GetRoot<PlasmaQueueItemInfo>(notification.get());
+  *seq_id = item_info->seq_id();
+  *data_offset = item_info->data_offset();
+  *data_size = item_info->data_size();
   return Status::OK();
 }
 
@@ -998,6 +1049,80 @@ Status PlasmaClient::Impl::Wait(int64_t num_object_requests,
   return Status::OK();
 }
 
+Status PlasmaClient::Impl::CreateQueue(const ObjectID& object_id, int64_t data_size,
+                            std::shared_ptr<Buffer>* data, int device_num) {
+  auto status = Create(object_id, data_size, nullptr, 0, data, device_num, ObjectType_Queue);
+  if (!status.ok()) {
+    return status;
+  }
+
+  std::unique_ptr<PlasmaQueueWriter> queue_writer(new PlasmaQueueWriter(const_cast<uint8_t*>((*data)->data()), data_size));
+  queue_writers_.insert({object_id, std::move(queue_writer)});
+
+  status = Seal(object_id);
+  
+  return status;
+  
+}
+
+Status PlasmaClient::Impl::GetQueue(const ObjectID& object_id, int64_t timeout_ms, uint64_t start_seq_id) {
+
+  std::vector<ObjectID> object_ids;
+  object_ids.push_back(object_id);
+  std::vector<ObjectBuffer> object_buffers;
+  RETURN_NOT_OK(Get(object_ids, timeout_ms, &object_buffers));
+  // TODO:  should check if it's indeed a Plama Queue.
+
+  int fd;
+  RETURN_NOT_OK(SubscribeQueue(object_id, &fd));
+
+  queue_notification_fds_[object_id] = fd;
+ 
+  auto buff = object_buffers[0].data;
+  queue_buffer_refs_.insert({object_id, buff});
+  
+  return Status::OK();
+}
+
+Status PlasmaClient::Impl::PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size) {
+  auto it = queue_writers_.find(object_id);
+  if (it == queue_writers_.end()) {
+    return Status::PlasmaObjectNonexistent("queue doesn't exist");
+  }
+
+  uint64_t offset, seq_id;
+  auto ret = it->second->Append(data, data_size, offset, seq_id);
+  auto status = plasma_error_status(ret);
+  if (!status.ok()) {
+    return status;
+  }
+
+  // XXX push the queue item spec to store.
+  // PlasmaQueueItemSpec queue_item_spec(object_id, -1, seq_id, offset, data_size);
+  RETURN_NOT_OK(SendQueueItemInfo(store_conn_, object_id, seq_id, offset, data_size));
+  
+  return status;
+}
+
+Status PlasmaClient::Impl::GetQueueItem(const ObjectID& object_id, uint8_t*& data, uint32_t& data_size, uint64_t& seq_id) {
+
+  auto it = queue_notification_fds_.find(object_id);
+  if (it == queue_notification_fds_.end()) {
+    return Status::PlasmaObjectNonexistent("queue doesn't exist");
+  }
+
+  uint64_t seq_id_r;
+  uint64_t data_offset_r;
+  uint32_t data_size_r;
+  RETURN_NOT_OK(GetQueueNotification(queue_notification_fds_[object_id], &seq_id_r, &data_offset_r, &data_size_r));
+
+  data = const_cast<uint8_t*>(queue_buffer_refs_[object_id]->data()) + data_offset_r;
+  data_size = data_size_r;
+  seq_id = seq_id_r;
+
+  return Status::OK();
+}
+
 // ----------------------------------------------------------------------
 // PlasmaClient
 
@@ -1088,78 +1213,25 @@ bool PlasmaClient::IsInUse(const ObjectID& object_id) {
   return impl_->IsInUse(object_id);
 }
 
+Status PlasmaClient::SubscribeQueue(const ObjectID& object_id, int* fd) {
+  return impl_->SubscribeQueue(object_id, fd);
+}
+
 Status PlasmaClient::CreateQueue(const ObjectID& object_id, int64_t data_size,
                             std::shared_ptr<Buffer>* data, int device_num) {
-  auto status = impl_->Create(object_id, data_size, nullptr, 0, data, device_num, ObjectType_Queue);
-  if (!status.ok()) {
-    return status;
-  }
-
-  std::unique_ptr<PlasmaQueueWriter> queue_writer(new PlasmaQueueWriter(const_cast<uint8_t*>((*data)->data()), data_size));
-  queue_writers_.insert({object_id, std::move(queue_writer)});
-
-  status = impl_->Seal(object_id);
-  
-  return status;
-  
+  return impl_->CreateQueue(object_id, data_size, data, device_num);
 }
 
 Status PlasmaClient::GetQueue(const ObjectID& object_id, int64_t timeout_ms, uint64_t start_seq_id) {
-  if (queue_readers_.find(object_id) != queue_readers_.end()) {
-    return Status::OK();
-  }
-  
-  std::vector<ObjectID> object_ids;
-  object_ids.push_back(object_id);
-  std::vector<ObjectBuffer> object_buffers;
-  auto status = impl_->Get(object_ids, timeout_ms, &object_buffers);
-  // TODO:  should check if it's indeed a Plama Queue.
-  if (!status.ok()) {
-    return status;
-  }
- 
-  auto buff = object_buffers[0].data;
-  std::unique_ptr<PlasmaQueueReader> queue_reader(new PlasmaQueueReader(const_cast<uint8_t*>(buff->data()), buff->size()));
-  queue_readers_.insert({object_id, std::move(queue_reader)});
-
-  queue_buffer_refs_.insert({object_id, buff});
-  
-  int ret = PlasmaError_OK;
-  if (start_seq_id != 0) {
-    ret = queue_reader->SetStartSeqId(start_seq_id);
-  }
-
-  return plasma_error_status(ret);  
+  return impl_->GetQueue(object_id, timeout_ms, start_seq_id);
 }
 
 Status PlasmaClient::PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size) {
-  auto it = queue_writers_.find(object_id);
-  if (it == queue_writers_.end()) {
-    return Status::PlasmaObjectNonexistent("queue doesn't exist");
-  }
-
-  auto ret = it->second->Append(data, data_size);
-  return plasma_error_status(ret);
+  return impl_->PushQueueItem(object_id, data, data_size);
 }
 
 Status PlasmaClient::GetQueueItem(const ObjectID& object_id, uint8_t*& data, uint32_t& data_size, uint64_t& seq_id) {
-  auto status = GetQueue(object_id, 10000); // TODO: start_seq_id is set to zero.
-  if (!status.ok()) {
-    return status;
-  }
-
-  auto ret = queue_readers_[object_id]->GetNext(data, data_size, seq_id);
-  return plasma_error_status(ret);
-}
-
-Status PlasmaClient::ReleaseQueueItem(const ObjectID& object_id, uint64_t seq_id) {
-  auto status = GetQueue(object_id, 10000); // TODO: start_seq_id is set to zero.
-  if (!status.ok()) {
-    return status;
-  }
-
-  auto ret = queue_readers_[object_id]->Release(seq_id);
-  return plasma_error_status(ret);
+  return impl_->GetQueueItem(object_id, data, data_size, seq_id);
 }
 
 }  // namespace plasma

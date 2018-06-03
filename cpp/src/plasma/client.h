@@ -327,7 +327,7 @@ class ARROW_EXPORT PlasmaClient {
 
   Status GetQueueItem(const ObjectID& object_id, uint8_t*& data, uint32_t& data_size, uint64_t& seq_id);
 
-  Status ReleaseQueueItem(const ObjectID& object_id, uint64_t seq_id);
+  Status SubscribeQueue(const ObjectID& object_id, int* fd);
 
  private:
   friend class PlasmaBuffer;
@@ -343,11 +343,6 @@ class ARROW_EXPORT PlasmaClient {
 
   class ARROW_NO_EXPORT Impl;
   std::shared_ptr<Impl> impl_;
-
-  std::unordered_map<ObjectID, std::unique_ptr<PlasmaQueueWriter>> queue_writers_;
-  std::unordered_map<ObjectID, std::unique_ptr<PlasmaQueueReader>> queue_readers_;
-  // Used to hold the reference for buffers returned from GetQueue().
-  std::unordered_map<ObjectID, std::shared_ptr<Buffer>> queue_buffer_refs_;
 };
 
 }  // namespace plasma

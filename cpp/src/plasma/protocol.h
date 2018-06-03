@@ -204,6 +204,13 @@ Status SendPushQueueItemReply(int sock, ObjectID object_id, uint64_t data_offset
 Status ReadPushQueueItemReply(uint8_t* data, size_t size, ObjectID* object_id,
   uint64_t* data_offset, uint64_t* data_size, uint64_t* seq_id);                      
 
+Status SendQueueSubscribeRequest(int sock, const ObjectID& object_id);
+
+Status ReadQueueSubscribeRequest(uint8_t* data, size_t size, ObjectID* object_id);
+
+Status SendQueueItemInfo(int sock, ObjectID object_id, uint64_t seq_id, uint64_t offset, uint32_t data_size);
+
+Status ReadQueueItemInfo(uint8_t* data, size_t size, PlasmaQueueItemInfoT* item_info);
 }  // namespace plasma
 
 #endif /* PLASMA_PROTOCOL */

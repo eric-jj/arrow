@@ -152,7 +152,7 @@ bool PlasmaQueueWriter::Allocate(uint64_t& start_offset, uint32_t data_size) {
   return true;
 }
 
-int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size) {
+int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_t& offset, uint64_t& seq_id) {
   uint64_t start_offset = sizeof(QueueHeader);
   bool should_create_block = FindStartOffset(data_size, start_offset);
 
@@ -169,6 +169,7 @@ int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size) {
   }
 
   seq_id_++;
+  seq_id = seq_id_;
 
   if (should_create_block) {
     // 1. initialize new block.
@@ -179,8 +180,9 @@ int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size) {
 
     next_index_in_block_ = 0;
     // append new data.
-    memcpy(reinterpret_cast<uint8_t*>(new_block_header) + new_block_header->item_offsets[next_index_in_block_],
-      data, data_size);
+    uint8_t* dest_position = reinterpret_cast<uint8_t*>(new_block_header) + new_block_header->item_offsets[next_index_in_block_];
+    offset = dest_position - buffer_;
+    memcpy(dest_position, data, data_size);
     new_block_header->item_offsets[next_index_in_block_ + 1] = new_block_header->item_offsets[next_index_in_block_] + data_size;
     next_index_in_block_++;
 
@@ -198,8 +200,9 @@ int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size) {
     QueueBlockHeader* last_block_header = reinterpret_cast<QueueBlockHeader*>(buffer_ + last_block_offset_);
     last_block_header->end_seq_id = seq_id_;
 
-    memcpy(reinterpret_cast<uint8_t*>(last_block_header) + last_block_header->item_offsets[next_index_in_block_], 
-      data, data_size);
+    uint8_t* dest_position = reinterpret_cast<uint8_t*>(last_block_header) + last_block_header->item_offsets[next_index_in_block_];
+    offset = dest_position - buffer_;
+    memcpy(dest_position, data, data_size);
 
     last_block_header->item_offsets[next_index_in_block_ + 1] = last_block_header->item_offsets[next_index_in_block_] + data_size;
     next_index_in_block_++;    

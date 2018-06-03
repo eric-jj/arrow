@@ -66,7 +66,8 @@ enum MessageType:int {
   // object store that requested the data. For each transfer, multiple
   // reply messages get sent. Each one contains a fixed number of bytes.
   PlasmaDataReply,
-  PlasmaSubscribeQueueRequest,
+  PlasmaQueueSubscribeRequest,
+  PlasmaQueueItemInfo,
   PlasmaQueuePushItem,
   PlasmaPushQueueItemRequest,
   PlasmaPushQueueItemReply,
@@ -345,11 +346,6 @@ table PlasmaDataReply {
   metadata_size: ulong;
 }
 
-table PlasmaSubscribeQueueRequest {
-    // ID of the object that will be sent.
-  object_id: string;
-}
-
 table PlasmaNewItemRequest {
   // ID of the object that will be sent.
   object_id: string;
@@ -380,3 +376,22 @@ table PlasmaPushQueueItemReply {
   // Error that occurred for this call.
   error: PlasmaError;
 }
+
+table PlasmaQueueSubscribeRequest {
+  // ID of the queue object.
+  object_id: string;
+}
+
+table PlasmaQueueItemInfo {  
+  object_id: string; 
+  // Index of the memory segment (= memory mapped file) that
+  // this queue item is allocated in.
+  segment_index: int;
+  // Sequence ID for queue item.
+  seq_id: ulong;
+  // The offset in bytes in the memory mapped file of the data.
+  data_offset: ulong;
+  // The size in bytes of the data.
+  data_size: ulong;
+}
+

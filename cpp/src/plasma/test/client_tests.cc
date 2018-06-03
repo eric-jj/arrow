@@ -55,6 +55,7 @@ class TestPlasmaStore : public ::testing::Test {
     std::mt19937 rng(static_cast<uint32_t>(seed));
     std::string store_index = std::to_string(rng());
     store_socket_name_ = "/tmp/store" + store_index;
+    // store_socket_name_ = "/tmp/store1234";
 
     std::string plasma_directory =
         test_executable.substr(0, test_executable.find_last_of("/"));
@@ -416,7 +417,6 @@ TEST_F(TestPlasmaStore, LocalPlasmaQueueTest) {
   for (auto i = 0; i < buff_size; i++) {
     ASSERT_TRUE(buff[i] == item1[i]);
   }
-  ARROW_CHECK_OK(client_.ReleaseQueueItem(object_id, seq_id));
    
   ARROW_CHECK_OK(client_.GetQueueItem(object_id, buff, buff_size, seq_id));
   ASSERT_TRUE(seq_id == 2);
@@ -424,7 +424,6 @@ TEST_F(TestPlasmaStore, LocalPlasmaQueueTest) {
   for (auto i = 0; i < buff_size; i++) {
     ASSERT_TRUE(buff[i] == item2[i]);
   }
-  ARROW_CHECK_OK(client_.ReleaseQueueItem(object_id, seq_id));
 }
 
 TEST_F(TestPlasmaStore, ManyObjectTest) {
