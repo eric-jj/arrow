@@ -732,8 +732,7 @@ void PlasmaStore::send_notifications(int client_fd,
 }
 
 void PlasmaStore::push_notification(ObjectInfoT* object_info) {
-  auto it = pending_notifications_.begin();
-  while (it != pending_notifications_.end()) {
+  for (auto& element : pending_notifications_) {
     auto notification = create_object_info_buffer(object_info);
     element.second.object_notifications.emplace_back(std::move(notification));
     send_notifications(element.first, pending_notifications_);
