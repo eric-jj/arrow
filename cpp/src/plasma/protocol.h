@@ -211,6 +211,11 @@ Status ReadQueueSubscribeRequest(uint8_t* data, size_t size, ObjectID* object_id
 Status SendQueueItemInfo(int sock, ObjectID object_id, uint64_t seq_id, uint64_t offset, uint32_t data_size);
 
 Status ReadQueueItemInfo(uint8_t* data, size_t size, PlasmaQueueItemInfoT* item_info);
+
+Status SendFetchQueueInfoRequest(int sock, const ObjectID& object_id);
+
+Status ReadFetchQueueInfoRequest(uint8_t* data, size_t size, ObjectID* object_id);
+
 }  // namespace plasma
 
 #endif /* PLASMA_PROTOCOL */

@@ -321,7 +321,7 @@ class ARROW_EXPORT PlasmaClient {
   Status CreateQueue(const ObjectID& object_id, int64_t data_size,
                             std::shared_ptr<Buffer>* data, int device_num=0);
 
-  Status GetQueue(const ObjectID& object_id, int64_t timeout_ms, uint64_t start_seq_id = 0);
+  Status GetQueue(const ObjectID& object_id, int64_t timeout_ms, int* fd, bool local_only = false, uint64_t start_seq_id = 0);
 
   Status PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size);
 
@@ -330,6 +330,9 @@ class ARROW_EXPORT PlasmaClient {
   Status SubscribeQueue(const ObjectID& object_id, int* fd);
 
  private:
+
+  Status FetchQueue(const ObjectID& object_id);
+
   friend class PlasmaBuffer;
   FRIEND_TEST(TestPlasmaStore, GetTest);
   FRIEND_TEST(TestPlasmaStore, LegacyGetTest);

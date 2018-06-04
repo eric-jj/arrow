@@ -395,7 +395,8 @@ TEST_F(TestPlasmaStore, LocalPlasmaQueueTest) {
   ARROW_CHECK_OK(client2_.CreateQueue(object_id, queue_size, &data));
   // ARROW_CHECK_OK(client2_.Seal(object_id));
   // Test that the first client can get the object.
-  ARROW_CHECK_OK(client_.GetQueue(object_id, -1));
+  int notify_fd;
+  ARROW_CHECK_OK(client_.GetQueue(object_id, -1, &notify_fd));
   ARROW_CHECK_OK(client_.Contains(object_id, &has_object));
   ASSERT_TRUE(has_object);
 

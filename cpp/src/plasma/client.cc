@@ -216,7 +216,7 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
   Status CreateQueue(const ObjectID& object_id, int64_t data_size,
                             std::shared_ptr<Buffer>* data, int device_num=0);
 
-  Status GetQueue(const ObjectID& object_id, int64_t timeout_ms, uint64_t start_seq_id = 0);
+  Status GetQueue(const ObjectID& object_id, int64_t timeout_ms, int* fd, bool local_only = false, uint64_t start_seq_id = 0);
 
   Status PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size);
 
@@ -225,6 +225,8 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
   Status SubscribeQueue(const ObjectID& object_id, int* fd);
 
   Status GetQueueNotification(int fd, uint64_t* seq_id, uint64_t* data_offset, uint32_t* data_size);
+
+  Status FetchQueue(const ObjectID& object_id);
 
  private:
   /// This is a helper method for unmapping objects for which all references have
@@ -1065,23 +1067,40 @@ Status PlasmaClient::Impl::CreateQueue(const ObjectID& object_id, int64_t data_s
   
 }
 
-Status PlasmaClient::Impl::GetQueue(const ObjectID& object_id, int64_t timeout_ms, uint64_t start_seq_id) {
+Status PlasmaClient::Impl::GetQueue(const ObjectID& object_id, int64_t timeout_ms, int* fd, bool local_only, uint64_t start_seq_id) {
 
   std::vector<ObjectID> object_ids;
   object_ids.push_back(object_id);
   std::vector<ObjectBuffer> object_buffers;
-  RETURN_NOT_OK(Get(object_ids, timeout_ms, &object_buffers));
+  // RETURN_NOT_OK(Get(object_ids, timeout_ms, &object_buffers));
+  auto status = Get(object_ids, 0, &object_buffers);
+  if (!status.ok()) {
+     if (local_only) {
+       return Status::PlasmaObjectNonexistent("queue doesn't exist locally");
+     }
+     RETURN_NOT_OK(FetchQueue(object_id));
+     // TODO: here we should probably retry until object id is available locally,
+     // or use Wait() before issuing another Get().
+     RETURN_NOT_OK(Get(object_ids, timeout_ms, &object_buffers));
+  }
+
   // TODO:  should check if it's indeed a Plama Queue.
 
-  int fd;
-  RETURN_NOT_OK(SubscribeQueue(object_id, &fd));
+  int notify_fd;
+  RETURN_NOT_OK(SubscribeQueue(object_id, &notify_fd));
 
-  queue_notification_fds_[object_id] = fd;
+  queue_notification_fds_[object_id] = notify_fd;
+  *fd = notify_fd;
  
   auto buff = object_buffers[0].data;
   queue_buffer_refs_.insert({object_id, buff});
   
   return Status::OK();
+}
+
+Status PlasmaClient::Impl::FetchQueue(const ObjectID& object_id) {
+  ARROW_CHECK(manager_conn_ >= 0);
+  return SendFetchQueueInfoRequest(manager_conn_, object_id);
 }
 
 Status PlasmaClient::Impl::PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size) {
@@ -1222,8 +1241,8 @@ Status PlasmaClient::CreateQueue(const ObjectID& object_id, int64_t data_size,
   return impl_->CreateQueue(object_id, data_size, data, device_num);
 }
 
-Status PlasmaClient::GetQueue(const ObjectID& object_id, int64_t timeout_ms, uint64_t start_seq_id) {
-  return impl_->GetQueue(object_id, timeout_ms, start_seq_id);
+Status PlasmaClient::GetQueue(const ObjectID& object_id, int64_t timeout_ms, int* fd, bool local_only, uint64_t start_seq_id) {
+  return impl_->GetQueue(object_id, timeout_ms, fd, local_only, start_seq_id);
 }
 
 Status PlasmaClient::PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size) {

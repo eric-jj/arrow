@@ -67,6 +67,8 @@ enum MessageType:int {
   // reply messages get sent. Each one contains a fixed number of bytes.
   PlasmaDataReply,
   PlasmaQueueSubscribeRequest,
+  PlasmaQueueRemoteSubscribeRequest,
+  PlasmaFetchQueueInfoRequest,
   PlasmaQueueItemInfo,
   PlasmaQueuePushItem,
   PlasmaPushQueueItemRequest,
@@ -393,5 +395,19 @@ table PlasmaQueueItemInfo {
   data_offset: ulong;
   // The size in bytes of the data.
   data_size: ulong;
+}
+
+table PlasmaFetchQueueInfoRequest {
+  // IDs of objects to be gotten.
+  object_id: string;
+}
+
+table PlasmaQueueRemoteSubscribeRequest {
+  // ID of the object that is requested.
+  object_id: string;
+  // The host address where the data shall be sent to.
+  address: string;
+  // The port of the manager the data shall be sent to.
+  port: int;
 }
 

@@ -505,6 +505,20 @@ Status ReadFetchRequest(uint8_t* data, size_t size, std::vector<ObjectID>& objec
   return Status::OK();
 }
 
+Status SendFetchQueueInfoRequest(int sock, const ObjectID& object_id) {
+  flatbuffers::FlatBufferBuilder fbb;
+  auto message = CreatePlasmaFetchQueueInfoRequest(fbb, fbb.CreateString(object_id.binary()));
+  return PlasmaSend(sock, MessageType_PlasmaFetchQueueInfoRequest, &fbb, message);
+}
+
+Status ReadFetchQueueInfoRequest(uint8_t* data, size_t size, ObjectID* object_id) {
+  DCHECK(data);
+  auto message = flatbuffers::GetRoot<PlasmaFetchQueueInfoRequest>(data);
+  DCHECK(verify_flatbuffer(message, data, size));
+  *object_id = ObjectID::from_binary(message->object_id()->str());
+  return Status::OK();
+}
+
 // Wait messages.
 
 Status SendWaitRequest(int sock, ObjectRequest object_requests[], int64_t num_requests,
@@ -592,6 +606,28 @@ Status ReadQueueSubscribeRequest(uint8_t* data, size_t size, ObjectID* object_id
   DCHECK(verify_flatbuffer(message, data, size));
   DCHECK(message->object_id()->size() == sizeof(ObjectID));
   *object_id = ObjectID::from_binary(message->object_id()->str());
+  return Status::OK();
+}
+
+// Remote Subscribe messages (between managers).
+
+Status SendQueueRemoteSubscribeRequest(int sock, ObjectID object_id, const char* address, int port) {
+  flatbuffers::FlatBufferBuilder fbb;
+  auto addr = fbb.CreateString(address, strlen(address));
+  auto message =
+      CreatePlasmaQueueRemoteSubscribeRequest(fbb, fbb.CreateString(object_id.binary()), addr, port);
+  return PlasmaSend(sock, MessageType_PlasmaQueueRemoteSubscribeRequest, &fbb, message);
+}
+
+Status ReadQueueRemoteSubscribeRequest(uint8_t* data, size_t size, ObjectID* object_id, char** address,
+                       int* port) {
+  DCHECK(data);
+  auto message = flatbuffers::GetRoot<PlasmaQueueRemoteSubscribeRequest>(data);
+  DCHECK(verify_flatbuffer(message, data, size));
+  DCHECK(message->object_id()->size() == sizeof(ObjectID));
+  *object_id = ObjectID::from_binary(message->object_id()->str());
+  *address = strdup(message->address()->c_str());
+  *port = message->port();
   return Status::OK();
 }
 
@@ -684,6 +720,8 @@ Status ReadPushQueueItemReply(uint8_t* data, size_t size, ObjectID* object_id,
 
   return plasma_error_status(message->error());
 }
+
+// Queue item info messages.
 
 Status SendQueueItemInfo(int sock, ObjectID object_id, uint64_t seq_id, uint64_t offset, uint32_t data_size) {  
    flatbuffers::FlatBufferBuilder fbb;
