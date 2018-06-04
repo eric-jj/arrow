@@ -147,6 +147,7 @@ install(FILES
   events.h
   plasma.h
   "${OUTPUT_DIR}/plasma_generated.h"
+  plasma_queue.h
   protocol.h
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/plasma")
 
