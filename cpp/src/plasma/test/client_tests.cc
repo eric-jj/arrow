@@ -427,6 +427,53 @@ TEST_F(TestPlasmaStore, LocalPlasmaQueueTest) {
   }
 }
 
+TEST_F(TestPlasmaStore, LocalPlasmaQueueBatchTest) {
+
+  ObjectID object_id = ObjectID::from_random();
+  std::vector<ObjectBuffer> object_buffers;
+
+  // Test for object non-existence on the first client.
+  bool has_object;
+  ARROW_CHECK_OK(client_.Contains(object_id, &has_object));
+  ASSERT_FALSE(has_object);
+
+  // Test for the object being in local Plasma store.
+  // First create and seal object on the second client.
+  int64_t queue_size = 1024 * 1024;
+  std::shared_ptr<Buffer> data;
+  ARROW_CHECK_OK(client2_.CreateQueue(object_id, queue_size, &data));
+  // ARROW_CHECK_OK(client2_.Seal(object_id));
+  // Test that the first client can get the object.
+  int notify_fd;
+  ARROW_CHECK_OK(client_.GetQueue(object_id, -1, &notify_fd));
+  ARROW_CHECK_OK(client_.Contains(object_id, &has_object));
+  ASSERT_TRUE(has_object);
+
+  std::vector<uint64_t> items;
+  items.resize(3000);
+  for (int i = 0; i < items.size(); i++) {
+    items[i] = i;
+  }
+
+  for (int i = 0; i < items.size(); i++) {
+    uint8_t* data = reinterpret_cast<uint8_t*>(&items[i]);
+    uint32_t data_size = static_cast<uint32_t>(sizeof(uint64_t));
+    ARROW_CHECK_OK(client2_.PushQueueItem(object_id, data, data_size));
+  }
+
+  for (int i = 0; i < items.size(); i++) {
+    uint8_t* buff = nullptr;
+    uint32_t buff_size = 0;
+    uint64_t seq_id = -1;
+
+    ARROW_CHECK_OK(client_.GetQueueItem(object_id, buff, buff_size, seq_id));
+    ASSERT_TRUE(seq_id == i + 1);
+    ASSERT_TRUE(buff_size == sizeof(uint64_t));
+    uint64_t value = *(uint64_t*)(buff);
+    ASSERT_TRUE(value == items[i]);
+  }
+}
+
 TEST_F(TestPlasmaStore, ManyObjectTest) {
   // Create many objects on the first client. Seal one third, abort one third,
   // and leave the last third unsealed.
