@@ -94,6 +94,7 @@ namespace plasma {
 
     int Append(uint8_t* data, uint32_t data_size, uint64_t& offset, uint64_t& seq_id);
 
+    uint8_t* GetBuffer() { return buffer_; }
 
   private:
     bool FindStartOffset(uint32_t data_size, uint64_t& new_start_offset);

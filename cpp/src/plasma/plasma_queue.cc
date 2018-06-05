@@ -182,7 +182,9 @@ int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_t& offse
     // append new data.
     uint8_t* dest_position = reinterpret_cast<uint8_t*>(new_block_header) + new_block_header->item_offsets[next_index_in_block_];
     offset = dest_position - buffer_;
-    memcpy(dest_position, data, data_size);
+    if (data != nullptr) {
+      memcpy(dest_position, data, data_size);
+    }
     new_block_header->item_offsets[next_index_in_block_ + 1] = new_block_header->item_offsets[next_index_in_block_] + data_size;
     next_index_in_block_++;
 
@@ -202,7 +204,9 @@ int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_t& offse
 
     uint8_t* dest_position = reinterpret_cast<uint8_t*>(last_block_header) + last_block_header->item_offsets[next_index_in_block_];
     offset = dest_position - buffer_;
-    memcpy(dest_position, data, data_size);
+    if (data != nullptr) {
+      memcpy(dest_position, data, data_size);
+    }
 
     last_block_header->item_offsets[next_index_in_block_ + 1] = last_block_header->item_offsets[next_index_in_block_] + data_size;
     next_index_in_block_++;    

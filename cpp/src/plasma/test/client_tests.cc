@@ -378,7 +378,7 @@ TEST_F(TestPlasmaStore, MultipleClientTest) {
   ASSERT_TRUE(has_object);
 }
 
-TEST_F(TestPlasmaStore, LocalPlasmaQueueTest) {
+TEST_F(TestPlasmaStore, QueuePushAndGetTest) {
 
   ObjectID object_id = ObjectID::from_random();
   std::vector<ObjectBuffer> object_buffers;
@@ -427,7 +427,63 @@ TEST_F(TestPlasmaStore, LocalPlasmaQueueTest) {
   }
 }
 
-TEST_F(TestPlasmaStore, LocalPlasmaQueueBatchTest) {
+TEST_F(TestPlasmaStore, QueueCreateAndGetTest) {
+
+  ObjectID object_id = ObjectID::from_random();
+  std::vector<ObjectBuffer> object_buffers;
+
+  // Test for object non-existence on the first client.
+  bool has_object;
+  ARROW_CHECK_OK(client_.Contains(object_id, &has_object));
+  ASSERT_FALSE(has_object);
+
+  // Test for the object being in local Plasma store.
+  // First create and seal object on the second client.
+  int64_t queue_size = 10 * 1024;
+  std::shared_ptr<Buffer> data;
+  ARROW_CHECK_OK(client2_.CreateQueue(object_id, queue_size, &data));
+  // ARROW_CHECK_OK(client2_.Seal(object_id));
+  // Test that the first client can get the object.
+  int notify_fd;
+  ARROW_CHECK_OK(client_.GetQueue(object_id, -1, &notify_fd));
+  ARROW_CHECK_OK(client_.Contains(object_id, &has_object));
+  ASSERT_TRUE(has_object);
+
+  uint64_t seq_id = -1;
+
+  uint8_t item1[] = { 1, 2, 3, 4, 5 };
+  int64_t item1_size = sizeof(item1);
+
+  ARROW_CHECK_OK(client2_.CreateQueueItem(object_id, item1_size, &data, seq_id));
+  memcpy(data->mutable_data(), item1, item1_size);
+  client2_.SealQueueItem(object_id, seq_id, data);
+  
+
+  uint8_t item2[] = { 6, 7, 8, 9 };
+  int64_t item2_size = sizeof(item2);
+  ARROW_CHECK_OK(client2_.CreateQueueItem(object_id, item2_size, &data, seq_id));
+  memcpy(data->mutable_data(), item2, item2_size);
+  client2_.SealQueueItem(object_id, seq_id, data);
+
+  uint8_t* buff = nullptr;
+  uint32_t buff_size = 0;
+
+  ARROW_CHECK_OK(client_.GetQueueItem(object_id, buff, buff_size, seq_id));
+  ASSERT_TRUE(seq_id == 1);
+  ASSERT_TRUE(buff_size == item1_size);
+  for (auto i = 0; i < buff_size; i++) {
+    ASSERT_TRUE(buff[i] == item1[i]);
+  }
+   
+  ARROW_CHECK_OK(client_.GetQueueItem(object_id, buff, buff_size, seq_id));
+  ASSERT_TRUE(seq_id == 2);
+  ASSERT_TRUE(buff_size == item2_size);
+  for (auto i = 0; i < buff_size; i++) {
+    ASSERT_TRUE(buff[i] == item2[i]);
+  }
+}
+
+TEST_F(TestPlasmaStore, QueueBatchTest) {
 
   ObjectID object_id = ObjectID::from_random();
   std::vector<ObjectBuffer> object_buffers;
