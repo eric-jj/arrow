@@ -457,7 +457,7 @@ TEST_F(TestPlasmaStore, QueuePushAndGetTest) {
 TEST_F(TestPlasmaStore, QueueCreateAndGetTest) {
 
   ObjectID object_id = ObjectID::from_random();
-  std::vector<ObjectBuffer> object_buffers;
+  ObjectBuffer object_buffer;
 
   // Test for object non-existence on the first client.
   bool has_object;
@@ -495,18 +495,18 @@ TEST_F(TestPlasmaStore, QueueCreateAndGetTest) {
   uint8_t* buff = nullptr;
   uint32_t buff_size = 0;
 
-  ARROW_CHECK_OK(client_.GetQueueItem(object_id, buff, buff_size, seq_id));
+  ARROW_CHECK_OK(client_.GetQueueItem(object_id, &object_buffer, seq_id));
   ASSERT_TRUE(seq_id == 1);
-  ASSERT_TRUE(buff_size == item1_size);
+  ASSERT_TRUE(object_buffer.data->size() == item1_size);
   for (auto i = 0; i < buff_size; i++) {
-    ASSERT_TRUE(buff[i] == item1[i]);
+    ASSERT_TRUE(object_buffer.data->data()[i] == item1[i]);
   }
    
-  ARROW_CHECK_OK(client_.GetQueueItem(object_id, buff, buff_size, seq_id));
+  ARROW_CHECK_OK(client_.GetQueueItem(object_id, &object_buffer, seq_id));
   ASSERT_TRUE(seq_id == 2);
-  ASSERT_TRUE(buff_size == item2_size);
+  ASSERT_TRUE(object_buffer.data->size() == item2_size);
   for (auto i = 0; i < buff_size; i++) {
-    ASSERT_TRUE(buff[i] == item2[i]);
+    ASSERT_TRUE(object_buffer.data->data()[i] == item2[i]);
   }
 }
 

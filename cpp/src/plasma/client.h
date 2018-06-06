@@ -341,11 +341,14 @@ class ARROW_EXPORT PlasmaClient {
 
   Status SealQueueItem(const ObjectID& object_id, uint64_t seq_id, std::shared_ptr<Buffer> data);
 
+  Status GetQueueItem(const ObjectID& object_id, ObjectBuffer* object_buffer, uint64_t& seq_id);
+
  private:
 
   Status FetchQueue(const ObjectID& object_id);
 
   friend class PlasmaBuffer;
+  friend class PlasmaQueueItemBuffer;
   FRIEND_TEST(TestPlasmaStore, GetTest);
   FRIEND_TEST(TestPlasmaStore, LegacyGetTest);
   FRIEND_TEST(TestPlasmaStore, AbortTest);
