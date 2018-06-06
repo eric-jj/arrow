@@ -218,6 +218,11 @@ Status SendFetchQueueInfoRequest(int sock, const ObjectID& object_id);
 
 Status ReadFetchQueueInfoRequest(uint8_t* data, size_t size, ObjectID* object_id);
 
+Status SendQueueRemoteSubscribeRequest(int sock, ObjectID object_id, const char* address, int port);
+
+Status ReadQueueRemoteSubscribeRequest(uint8_t* data, size_t size, ObjectID* object_id, char** address,
+  int* port);
+
 }  // namespace plasma
 
 #endif /* PLASMA_PROTOCOL */
