@@ -1082,16 +1082,24 @@ Status PlasmaClient::Impl::GetQueue(const ObjectID& object_id, int64_t timeout_m
   object_ids.push_back(object_id);
   std::vector<ObjectBuffer> object_buffers;
   // RETURN_NOT_OK(Get(object_ids, timeout_ms, &object_buffers));
-  auto status = Get(object_ids, 0, &object_buffers);
-  if (!status.ok()) {
-     if (local_only) {
-       return Status::PlasmaObjectNonexistent("queue doesn't exist locally");
-     }
-     RETURN_NOT_OK(FetchQueue(object_id));
-     // TODO: here we should probably retry until object id is available locally,
-     // or use Wait() before issuing another Get().
-     RETURN_NOT_OK(Get(object_ids, timeout_ms, &object_buffers));
+
+  if (manager_conn_ >= 0) {
+    // This needs to check w/ Plasma Managger.
+
+    int object_status;
+    RETURN_NOT_OK(Info(object_id, &object_status));
+    if (object_status == ObjectStatus_Nonexistent) {
+      return Status::PlasmaObjectNonexistent("queue doesn't exist locally");
+    }
+
+    if (object_status == ObjectStatus_Remote) {
+      RETURN_NOT_OK(FetchQueue(object_id));
+      // TODO: here we should probably retry until object id is available locally,
+      // or use Wait() before issuing another Get().
+    }
   }
+
+  RETURN_NOT_OK(Get(object_ids, timeout_ms, &object_buffers));   
 
   // TODO:  should check if it's indeed a Plama Queue.
 
