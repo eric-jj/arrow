@@ -1148,6 +1148,10 @@ Status PlasmaClient::Impl::FetchQueue(const ObjectID& object_id) {
 }
 
 Status PlasmaClient::Impl::PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size) {
+  if (queue_writers_.empty()) {
+    return Status::PlasmaObjectNonexistent("no queue writers in this client");    
+  }
+
   auto it = queue_writers_.find(object_id);
   if (it == queue_writers_.end()) {
     return Status::PlasmaObjectNonexistent("queue doesn't exist");
@@ -1168,6 +1172,10 @@ Status PlasmaClient::Impl::PushQueueItem(const ObjectID& object_id, uint8_t* dat
 }
 
 Status PlasmaClient::Impl::CreateQueueItem(const ObjectID& object_id, uint32_t data_size, std::shared_ptr<Buffer>* data, uint64_t& seq_id) {
+  if (queue_writers_.empty()) {
+    return Status::PlasmaObjectNonexistent("no queue writers in this client");    
+  }
+  
   auto it = queue_writers_.find(object_id);
   if (it == queue_writers_.end()) {
     return Status::PlasmaObjectNonexistent("queue doesn't exist");
