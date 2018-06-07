@@ -343,6 +343,7 @@ class ARROW_EXPORT PlasmaClient {
 
   Status GetQueueItem(const ObjectID& object_id, ObjectBuffer* object_buffer, uint64_t& seq_id);
 
+  Status GetQueueItem(const ObjectID& object_id, std::shared_ptr<Buffer>* buffer, uint64_t& seq_id);
  private:
 
   Status FetchQueue(const ObjectID& object_id);

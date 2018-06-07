@@ -498,15 +498,16 @@ TEST_F(TestPlasmaStore, QueueCreateAndGetTest) {
   ARROW_CHECK_OK(client_.GetQueueItem(object_id, &object_buffer, seq_id));
   ASSERT_TRUE(seq_id == 1);
   ASSERT_TRUE(object_buffer.data->size() == item1_size);
-  for (auto i = 0; i < buff_size; i++) {
+  for (auto i = 0; i < item1_size; i++) {
     ASSERT_TRUE(object_buffer.data->data()[i] == item1[i]);
   }
-   
-  ARROW_CHECK_OK(client_.GetQueueItem(object_id, &object_buffer, seq_id));
+  
+  std::shared_ptr<Buffer> buffer;
+  ARROW_CHECK_OK(client_.GetQueueItem(object_id, &buffer, seq_id));
   ASSERT_TRUE(seq_id == 2);
-  ASSERT_TRUE(object_buffer.data->size() == item2_size);
-  for (auto i = 0; i < buff_size; i++) {
-    ASSERT_TRUE(object_buffer.data->data()[i] == item2[i]);
+  ASSERT_TRUE(buffer->size() == item2_size);
+  for (auto i = 0; i < item2_size; i++) {
+    ASSERT_TRUE(buffer->data()[i] == item2[i]);
   }
 }
 

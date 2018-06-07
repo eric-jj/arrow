@@ -259,6 +259,8 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
 
   Status GetQueueItem(const ObjectID& object_id, ObjectBuffer* object_buffer, uint64_t& seq_id);
 
+  Status GetQueueItem(const ObjectID& object_id, std::shared_ptr<Buffer>* buffer, uint64_t& seq_id);
+
  private:
   /// This is a helper method for unmapping objects for which all references have
   /// gone out of scope, either by calling Release or Abort.
@@ -1175,7 +1177,7 @@ Status PlasmaClient::Impl::CreateQueueItem(const ObjectID& object_id, uint32_t d
   if (queue_writers_.empty()) {
     return Status::PlasmaObjectNonexistent("no queue writers in this client");    
   }
-  
+
   auto it = queue_writers_.find(object_id);
   if (it == queue_writers_.end()) {
     return Status::PlasmaObjectNonexistent("queue doesn't exist");
@@ -1246,6 +1248,30 @@ Status PlasmaClient::Impl::GetQueueItem(const ObjectID& object_id, ObjectBuffer*
   object_buffer->data = SliceBuffer(physical_buf, 0, data_size_r);
   object_buffer->metadata = SliceBuffer(physical_buf, data_size_r, 0);
   object_buffer->device_num = 0;
+
+  seq_id = seq_id_r;
+
+  return Status::OK();
+
+}
+
+Status PlasmaClient::Impl::GetQueueItem(const ObjectID& object_id, std::shared_ptr<Buffer>* buffer, uint64_t& seq_id) {
+
+  auto it = queue_notification_fds_.find(object_id);
+  if (it == queue_notification_fds_.end()) {
+    return Status::PlasmaObjectNonexistent("queue doesn't exist");
+  }
+
+  uint64_t seq_id_r;
+  uint64_t data_offset_r;
+  uint32_t data_size_r;
+  RETURN_NOT_OK(GetQueueNotification(queue_notification_fds_[object_id], &seq_id_r, &data_offset_r, &data_size_r));
+
+  std::shared_ptr<Buffer> physical_buf = std::make_shared<Buffer>(
+        const_cast<uint8_t*>(queue_buffer_refs_[object_id]->data()) + data_offset_r,
+        data_size_r);
+
+  *buffer = physical_buf;
 
   seq_id = seq_id_r;
 
@@ -1379,4 +1405,9 @@ Status PlasmaClient::SealQueueItem(const ObjectID& object_id, uint64_t seq_id, s
 Status PlasmaClient::GetQueueItem(const ObjectID& object_id, ObjectBuffer* object_buffer, uint64_t& seq_id) {
   return impl_->GetQueueItem(object_id, object_buffer, seq_id);
 }
+
+Status PlasmaClient::GetQueueItem(const ObjectID& object_id, std::shared_ptr<Buffer>* buffer, uint64_t& seq_id) {
+  return impl_->GetQueueItem(object_id, buffer, seq_id);
+}
+
 }  // namespace plasma
