@@ -1114,7 +1114,7 @@ Status PlasmaClient::Impl::GetQueue(const ObjectID& object_id, int64_t timeout_m
 
   if (manager_conn_ >= 0) {
     // This needs to check w/ Plasma Managger.
-
+/*
     int object_status;
     RETURN_NOT_OK(Info(object_id, &object_status));
     if (object_status == ObjectStatus_Nonexistent) {
@@ -1126,6 +1126,13 @@ Status PlasmaClient::Impl::GetQueue(const ObjectID& object_id, int64_t timeout_m
       // TODO: here we should probably retry until object id is available locally,
       // or use Wait() before issuing another Get().
     }
+  */
+    int object_status;
+    RETURN_NOT_OK(Info(object_id, &object_status));
+    if (object_status != ObjectStatus_Local) {
+      // TODO: need to make sure it's ok for local queue.
+      RETURN_NOT_OK(FetchQueue(object_id));
+    }   
   }
 
   RETURN_NOT_OK(Get(object_ids, timeout_ms, &object_buffers));   
