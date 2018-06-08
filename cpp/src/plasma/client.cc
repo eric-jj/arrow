@@ -1096,8 +1096,8 @@ Status PlasmaClient::Impl::CreateQueue(const ObjectID& object_id, int64_t data_s
     return status;
   }
 
-  std::unique_ptr<PlasmaQueueWriter> queue_writer(new PlasmaQueueWriter(const_cast<uint8_t*>((*data)->data()), data_size));
-  queue_writers_.insert({object_id, std::move(queue_writer)});
+  queue_writers_[object_id] = std::unique_ptr<PlasmaQueueWriter>(
+    new PlasmaQueueWriter((*data)->mutable_data(), data_size));
 
   status = Seal(object_id);
   
