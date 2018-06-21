@@ -51,6 +51,38 @@ JNIEXPORT jobject JNICALL Java_org_apache_arrow_plasma_PlasmaClientJNI_create(
 
 /*
  * Class:     org_apache_arrow_plasma_PlasmaClientJNI
+ * Method:    createQueue
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_org_apache_arrow_plasma_PlasmaClientJNI_createQueue(
+    JNIEnv*, jclass, jlong, jbyteArray, jint);
+
+/*
+ * Class:     org_apache_arrow_plasma_PlasmaClientJNI
+ * Method:    pushQueue
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_org_apache_arrow_plasma_PlasmaClientJNI_pushQueue(
+    JNIEnv*, jclass, jlong, jbyteArray, jbyteArray, jint);
+
+/*
+ * Class:     org_apache_arrow_plasma_PlasmaClientJNI
+ * Method:    getQueue
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_org_apache_arrow_plasma_PlasmaClientJNI_getQueue(
+    JNIEnv*, jclass, jlong, jbyteArray, jint);
+
+/*
+ * Class:     org_apache_arrow_plasma_PlasmaClientJNI
+ * Method:    readQueue
+ * Signature: (J[BJI)Ljava/nio/ByteBuffer;
+ */
+JNIEXPORT jobject JNICALL Java_org_apache_arrow_plasma_PlasmaClientJNI_readQueue(
+    JNIEnv*, jclass, jlong, jbyteArray, jlong, jint);
+
+/*
+ * Class:     org_apache_arrow_plasma_PlasmaClientJNI
  * Method:    hash
  * Signature: (J[B)[B
  */
