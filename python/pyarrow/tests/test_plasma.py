@@ -739,6 +739,25 @@ class TestPlasmaClient(object):
             create_object(self.plasma_client2, DEFAULT_PLASMA_STORE_MEMORY + 1,
                           0)
 
+    # Mitigate valgrind-induced slowness
+    QUEUE_TEST_SIZES = ([1, 10, 100, 1000] if USE_VALGRIND
+                            else [1, 10, 100, 1000, 10000])
+
+    def test_queue(self):
+        # Subscribe to notifications from the Plasma Store.
+        for i in self.QUEUE_TEST_SIZES :
+            queue_object_id = random_object_id()
+
+            self.plasma_client.create_queue(queue_object_id, 10 * 1024 * 1024)
+            self.plasma_client2.get_queue(queue_object_id)
+
+            values = [np.random.randint(1000) for _ in range(i)]
+            for j in range(i):
+                self.plasma_client.push_queue(values[j], queue_object_id)
+            # Check that we received notifications for all of the objects.
+            for j in range(i):
+                val = self.plasma_client2.read_queue(queue_object_id, 0)
+                assert val == values[j]
 
 @pytest.mark.plasma
 def test_object_id_size():

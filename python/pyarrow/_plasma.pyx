@@ -237,6 +237,45 @@ cdef class PlasmaBuffer(Buffer):
         self.client.release(self.object_id)
 
 
+cdef class PlasmaQueueItemBuffer(Buffer):
+       """
+       This is the type returned by calls to get with a PlasmaClient.
+
+       We define our own class instead of directly returning a buffer object so
+       that we can add a custom destructor which notifies Plasma that the object
+       is no longer being used, so the memory in the Plasma store backing the
+       object can potentially be freed.
+
+       Attributes
+       ----------
+       object_id : ObjectID
+           The ID of the object in the buffer.
+       client : PlasmaClient
+           The PlasmaClient that we use to communicate with the store and manager.
+       """
+
+       cdef:
+           ObjectID object_id
+           uint64_t seq_id
+           PlasmaClient client
+
+       def __cinit__(self, ObjectID object_id, uint64_t seq_id, PlasmaClient client):
+           """
+           Initialize a PlasmaBuffer.
+           """
+           self.object_id = object_id
+           self.seq_id = seq_id
+           self.client = client
+
+       def __dealloc__(self):
+           """
+           Notify Plasma that the object is no longer needed.
+
+           If the plasma client has been shut down, then don't do anything.
+           """
+           #self.client.release(self.object_id)
+
+
 cdef class PlasmaClient:
     """
     The PlasmaClient is used to interface with a plasma store and manager.
@@ -275,6 +314,15 @@ cdef class PlasmaClient:
         cdef shared_ptr[CBuffer] buffer
         buffer.reset(new CMutableBuffer(data, size))
         return PlasmaBuffer.create(object_id, self, buffer)
+
+    # XXX C++ API should instead expose some kind of CreateAuto()
+    cdef _make_mutable_plasma_queue_item_buffer(self, ObjectID object_id, uint64_t seq_id,
+                                                uint8_t* data, int64_t size):
+        cdef shared_ptr[CBuffer] buffer
+        buffer.reset(new CMutableBuffer(data, size))
+        result = PlasmaQueueItemBuffer(object_id, seq_id, self)
+        result.init(buffer)
+        return result
 
     @property
     def store_socket_name(self):
@@ -476,7 +524,7 @@ cdef class PlasmaClient:
         cdef shared_ptr[CBuffer] data
         check_status(self.client.get().CreateQueueItem(target_id.data,
             serialized.total_bytes, &data, seq_id))
-        buffer = self._make_mutable_plasma_buffer(target_id,
+        buffer = self._make_mutable_plasma_queue_item_buffer(target_id, seq_id,
                                                 data.get().mutable_data(),
                                                 serialized.total_bytes)
 
