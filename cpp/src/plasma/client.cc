@@ -249,6 +249,8 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
 
   Status SubscribeQueue(const ObjectID& object_id, int* fd);
 
+  Status SubscribeQueue(int* fd);
+
   Status GetQueueNotification(int fd, uint64_t* seq_id, uint64_t* data_offset, uint32_t* data_size);
 
   Status FetchQueue(const ObjectID& object_id);
@@ -954,6 +956,27 @@ Status PlasmaClient::Impl::SubscribeQueue(const ObjectID& object_id, int* fd) {
   return Status::OK();
 }
 
+
+Status PlasmaClient::Impl::SubscribeQueue(int* fd) {
+  int sock[2];
+  // Create a non-blocking socket pair. This will only be used to send
+  // notifications from the Plasma store to the client.
+  socketpair(AF_UNIX, SOCK_STREAM, 0, sock);
+  // Make the socket non-blocking.
+  int flags = fcntl(sock[1], F_GETFL, 0);
+  ARROW_CHECK(fcntl(sock[1], F_SETFL, flags | O_NONBLOCK) == 0);
+  // Tell the Plasma store about the subscription.
+  RETURN_NOT_OK(SendSubscribeQueueRequest(store_conn_));
+  // Send the file descriptor that the Plasma store should use to push
+  // notifications about sealed objects to this client.
+  ARROW_CHECK(send_fd(store_conn_, sock[1]) >= 0);
+  close(sock[1]);
+  // Return the file descriptor that the client should use to read notifications
+  // about sealed objects.
+  *fd = sock[0];
+  return Status::OK();
+}
+
 Status PlasmaClient::Impl::GetNotification(int fd, ObjectID* object_id,
                                            int64_t* data_size, int64_t* metadata_size) {
   auto notification = read_message_async(fd);
@@ -1382,6 +1405,14 @@ bool PlasmaClient::IsInUse(const ObjectID& object_id) {
 
 Status PlasmaClient::SubscribeQueue(const ObjectID& object_id, int* fd) {
   return impl_->SubscribeQueue(object_id, fd);
+}
+
+Status PlasmaClient::SubscribeQueue(int* fd) {
+  return impl_->SubscribeQueue(fd);
+}
+
+Status PlasmaClient::GetQueueNotification(int fd, uint64_t* seq_id, uint64_t* data_offset, uint32_t* data_size) {
+  return impl_->GetQueueNotification(fd, seq_id, data_offset, data_size);
 }
 
 Status PlasmaClient::CreateQueue(const ObjectID& object_id, int64_t data_size,

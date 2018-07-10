@@ -177,6 +177,8 @@ class PlasmaStore {
   /// @param client The client making this request.
   void subscribe_to_updates(Client* client);
 
+  void subscribe_to_queue_updates(Client* client);
+
   void subscribe_to_queue_updates(Client* client, const ObjectID& object_id);
 
   /// Connect a new client to the PlasmaStore.
@@ -235,9 +237,9 @@ class PlasmaStore {
   arrow::gpu::CudaDeviceManager* manager_;
 #endif
 
-  typedef std::unordered_map<int, NotificationQueue> ClientNotifications;
+  NotificationMap pending_queue_notifications_;
 
-  std::unordered_map<ObjectID, ClientNotifications> pending_queue_notifications_;
+  std::unordered_map<ObjectID, NotificationMap> pending_per_queue_notifications_;
 };
 
 }  // namespace plasma

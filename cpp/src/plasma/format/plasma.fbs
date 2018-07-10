@@ -66,6 +66,8 @@ enum MessageType:long {
   // object store that requested the data. For each transfer, multiple
   // reply messages get sent. Each one contains a fixed number of bytes.
   PlasmaDataReply,
+  // Plasma queue.
+  PlasmaSubscribeQueueRequest,
   PlasmaQueueSubscribeRequest,
   PlasmaQueueRemoteSubscribeRequest,
   PlasmaFetchQueueInfoRequest,
@@ -383,9 +385,14 @@ table PlasmaPushQueueItemReply {
   error: PlasmaError;
 }
 
+// Subscribe updates for a given queue in local store.
 table PlasmaQueueSubscribeRequest {
   // ID of the queue object.
   object_id: string;
+}
+
+// Subscribe updates for all queues in local store.
+table PlasmaSubscribeQueueRequest {
 }
 
 table PlasmaQueueItemInfo {  

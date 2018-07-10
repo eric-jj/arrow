@@ -335,8 +335,15 @@ class ARROW_EXPORT PlasmaClient {
 
   Status GetQueueItem(const ObjectID& object_id, uint8_t*& data, uint32_t& data_size, uint64_t& seq_id);
 
+  // Subscribe updates for queue specified by object id.
   Status SubscribeQueue(const ObjectID& object_id, int* fd);
 
+  // Subscribe updates for all queues in this store.
+  // This is supposed to be used by ObjectManager.
+  Status SubscribeQueue(int* fd);
+
+  Status GetQueueNotification(int fd, uint64_t* seq_id, uint64_t* data_offset, uint32_t* data_size);
+  
   Status CreateQueueItem(const ObjectID& object_id, uint32_t data_size, std::shared_ptr<Buffer>* data, uint64_t& seq_id);
 
   Status SealQueueItem(const ObjectID& object_id, uint64_t seq_id, std::shared_ptr<Buffer> data);

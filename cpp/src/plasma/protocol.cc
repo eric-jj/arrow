@@ -625,6 +625,12 @@ Status SendSubscribeRequest(int sock) {
   return PlasmaSend(sock, MessageType::PlasmaSubscribeRequest, &fbb, message);
 }
 
+Status SendSubscribeQueueRequest(int sock) {
+  flatbuffers::FlatBufferBuilder fbb;
+  auto message = CreatePlasmaSubscribeQueueRequest(fbb);
+  return PlasmaSend(sock, MessageType_PlasmaSubscribeQueueRequest, &fbb, message);
+}
+
 Status SendQueueSubscribeRequest(int sock, const ObjectID& object_id) {
   flatbuffers::FlatBufferBuilder fbb;
   auto message = CreatePlasmaQueueSubscribeRequest(fbb, fbb.CreateString(object_id.binary()));

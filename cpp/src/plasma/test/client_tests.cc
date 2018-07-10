@@ -609,6 +609,69 @@ TEST_F(TestPlasmaStore, QueueBatchCreateAndGetTest) {
   }
 }
 
+TEST_F(TestPlasmaStore, QueueSubscriberTest) {
+  PlasmaClient local_client1, local_client2, local_client3;
+
+  ARROW_CHECK_OK(local_client1.Connect(store_socket_name_, ""));
+  ARROW_CHECK_OK(local_client2.Connect(store_socket_name_, ""));
+  ARROW_CHECK_OK(local_client3.Connect(store_socket_name_, ""));
+ 
+  // Client1 creates queue object.
+  int64_t queue_size = 1024 * 1024;
+  std::shared_ptr<Buffer> data;
+  ObjectID object_id = ObjectID::from_random();
+  ARROW_CHECK_OK(local_client1.CreateQueue(object_id, queue_size, &data));
+
+  // Client2 subscribes updates for all queues.
+  int fd2 = -1;
+  ARROW_CHECK_OK(local_client2.SubscribeQueue(&fd2));
+  ASSERT_GT(fd2, 0);
+  
+  // Client3 subscribes updates for this queue object.
+  int fd3 = -1;
+  ARROW_CHECK_OK(local_client3.SubscribeQueue(object_id, &fd3));
+  ASSERT_GT(fd3, 0);
+
+  // Client1 pushes queue items.
+  std::vector<uint64_t> items;
+  items.resize(100);
+  for (int i = 0; i < items.size(); i++) {
+    items[i] = i;
+  }
+
+  for (int i = 0; i < items.size(); i++) {
+    uint8_t* data = reinterpret_cast<uint8_t*>(&items[i]);
+    uint32_t data_size = static_cast<uint32_t>(sizeof(uint64_t));
+    ARROW_CHECK_OK(local_client1.PushQueueItem(object_id, data, data_size));
+  }
+
+  // Verify client2 receives all notifications.
+  for (int i = 0; i < items.size(); i++) {
+    uint64_t seq_id = 0;
+    uint64_t data_offset = 0;
+    uint32_t data_size = 0;
+    ARROW_CHECK_OK(local_client2.GetQueueNotification(fd2, &seq_id, &data_offset, &data_size));
+    ASSERT_TRUE(seq_id == i + 1);
+    ASSERT_TRUE(data_size == sizeof(uint64_t));
+  }
+
+  // Verify client2 receives all notifications.
+  for (int i = 0; i < items.size(); i++) {
+    uint64_t seq_id = 0;
+    uint64_t data_offset = 0;
+    uint32_t data_size = 0;
+    ARROW_CHECK_OK(local_client3.GetQueueNotification(fd3, &seq_id, &data_offset, &data_size));
+    ASSERT_TRUE(seq_id == i + 1);
+    ASSERT_TRUE(data_size == sizeof(uint64_t));
+  }
+
+  ARROW_CHECK_OK(local_client1.Release(object_id));
+
+  ARROW_CHECK_OK(local_client3.Disconnect());
+  ARROW_CHECK_OK(local_client2.Disconnect());
+  ARROW_CHECK_OK(local_client1.Disconnect());
+}
+
 TEST_F(TestPlasmaStore, ManyObjectTest) {
   // Create many objects on the first client. Seal one third, abort one third,
   // and leave the last third unsealed.

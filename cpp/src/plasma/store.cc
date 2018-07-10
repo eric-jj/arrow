@@ -221,7 +221,7 @@ PlasmaError PlasmaStore::create_object(const ObjectID& object_id, int64_t data_s
 #endif
 
   if (object_type == ObjectType_Queue) {
-    pending_queue_notifications_[object_id];
+    pending_per_queue_notifications_[object_id];
 
 /*
     auto queue_data = new SimpleQueueData;
@@ -780,10 +780,18 @@ void PlasmaStore::subscribe_to_updates(Client* client) {
 }
 
 void PlasmaStore::push_queue_notification(const ObjectID& object_id, PlasmaQueueItemInfoT* item_info) {
-  for (auto& element : pending_queue_notifications_[object_id]) {
+  // Push notifications to clients which subscribed for updates from all queues in the store.
+  for (auto& element : pending_queue_notifications_) {
     auto notification = create_queue_item_buffer(item_info);
     element.second.object_notifications.emplace_back(std::move(notification));
-    send_notifications(element.first, pending_queue_notifications_[object_id]);
+    send_notifications(element.first, pending_queue_notifications_);
+  }
+
+  // Push notifications to clients which subscribed for updates from this queue.
+  for (auto& element : pending_per_queue_notifications_[object_id]) {
+    auto notification = create_queue_item_buffer(item_info);
+    element.second.object_notifications.emplace_back(std::move(notification));
+    send_notifications(element.first, pending_per_queue_notifications_[object_id]);
   }
 }
 
@@ -800,11 +808,37 @@ void PlasmaStore::subscribe_to_queue_updates(Client* client, const ObjectID& obj
     return;
   }
 
-  pending_queue_notifications_[object_id];
-  pending_queue_notifications_[object_id][fd];
+  pending_per_queue_notifications_[object_id];
+  pending_per_queue_notifications_[object_id][fd];
 
-  ARROW_CHECK(pending_queue_notifications_.find(object_id) != pending_queue_notifications_.end());
-  ARROW_CHECK(pending_queue_notifications_[object_id].find(fd) != pending_queue_notifications_[object_id].end());
+  ARROW_CHECK(pending_per_queue_notifications_.find(object_id) != pending_per_queue_notifications_.end());
+  ARROW_CHECK(pending_per_queue_notifications_[object_id].find(fd) != pending_per_queue_notifications_[object_id].end());
+
+  // TODO: push all existing queue items to new subscriber. This requires store
+  // to maintain a list of valid sed ids.
+/*
+  // Push notifications to the new subscriber about existing objects.
+  for (const auto& entry : store_info_.objects) {
+    push_notification(&entry.second->info);
+  }
+  send_notifications(fd);
+*/
+}
+
+// Subscribe to notifications about sealed objects.
+void PlasmaStore::subscribe_to_queue_updates(Client* client) {
+  ARROW_LOG(DEBUG) << "subscribing to updates on fd " << client->fd;
+  // TODO(rkn): The store could block here if the client doesn't send a file
+  // descriptor.
+  int fd = recv_fd(client->fd);
+  if (fd < 0) {
+    // This may mean that the client died before sending the file descriptor.
+    ARROW_LOG(WARNING) << "Failed to receive file descriptor from client on fd "
+                       << client->fd << ".";
+    return;
+  }
+
+  pending_queue_notifications_[fd];
 
   // TODO: push all existing queue items to new subscriber. This requires store
   // to maintain a list of valid sed ids.
@@ -905,16 +939,15 @@ Status PlasmaStore::process_message(Client* client) {
     case MessageType::PlasmaSubscribeRequest:
       subscribe_to_updates(client);
       break;
-<<<<<<< HEAD
-    case MessageType::PlasmaConnectRequest: {
-=======
-    case MessageType_PlasmaQueueSubscribeRequest:
+    case MessageType::PlasmaSubscribeQueueRequest:
+      subscribe_to_queue_updates(client);
+      break;      
+    case MessageType::PlasmaQueueSubscribeRequest:
       RETURN_NOT_OK(ReadQueueSubscribeRequest(input, input_size, &object_id));
       subscribe_to_queue_updates(client, object_id);
       break;
       
-    case MessageType_PlasmaConnectRequest: {
->>>>>>> Rewrite code logic so that client gets queue items via notification instead of reading directly from raw buffer (right now only support local writer & reader)
+    case MessageType::PlasmaConnectRequest: {
       HANDLE_SIGPIPE(SendConnectReply(client->fd, store_info_.memory_capacity),
                      client->fd);
     } break;

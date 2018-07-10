@@ -206,9 +206,13 @@ Status SendPushQueueItemReply(int sock, ObjectID object_id, uint64_t data_offset
 Status ReadPushQueueItemReply(uint8_t* data, size_t size, ObjectID* object_id,
   uint64_t* data_offset, uint64_t* data_size, uint64_t* seq_id);                      
 
+// Subscribe one queue.
 Status SendQueueSubscribeRequest(int sock, const ObjectID& object_id);
 
 Status ReadQueueSubscribeRequest(uint8_t* data, size_t size, ObjectID* object_id);
+
+// Subscribe all queues.
+Status SendSubscribeQueueRequest(int sock);
 
 Status SendQueueItemInfo(int sock, ObjectID object_id, uint64_t seq_id, uint64_t offset, uint32_t data_size);
 
