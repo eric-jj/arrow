@@ -194,7 +194,7 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
                  int num_retries = -1);
 
   Status Create(const ObjectID& object_id, int64_t data_size, const uint8_t* metadata,
-                int64_t metadata_size, std::shared_ptr<Buffer>* data, int device_num = 0, ObjectType type = ObjectType_Default);
+                int64_t metadata_size, std::shared_ptr<Buffer>* data, int device_num = 0, ObjectType type = ObjectType::Default);
 
   Status Get(const std::vector<ObjectID>& object_ids, int64_t timeout_ms,
              std::vector<ObjectBuffer>* object_buffers);
@@ -1114,7 +1114,7 @@ Status PlasmaClient::Impl::Wait(int64_t num_object_requests,
 
 Status PlasmaClient::Impl::CreateQueue(const ObjectID& object_id, int64_t data_size,
                             std::shared_ptr<Buffer>* data, int device_num) {
-  auto status = Create(object_id, data_size, nullptr, 0, data, device_num, ObjectType_Queue);
+  auto status = Create(object_id, data_size, nullptr, 0, data, device_num, ObjectType::Queue);
   if (!status.ok()) {
     return status;
   }
@@ -1152,7 +1152,7 @@ Status PlasmaClient::Impl::GetQueue(const ObjectID& object_id, int64_t timeout_m
   */
     int object_status;
     RETURN_NOT_OK(Info(object_id, &object_status));
-    if (object_status != ObjectStatus_Local) {
+    if (object_status != int(ObjectStatus::Local)) {
       // TODO: need to make sure it's ok for local queue.
       RETURN_NOT_OK(FetchQueue(object_id));
     }   

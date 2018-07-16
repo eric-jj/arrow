@@ -78,7 +78,7 @@ TEST(PlasmaSerialization, CreateRequest) {
   int64_t data_size1 = 42;
   int64_t metadata_size1 = 11;
   int device_num1 = 0;
-  ObjectType object_type1 = ObjectType_Default;
+  ObjectType object_type1 = ObjectType::Default;
   ARROW_CHECK_OK(
       SendCreateRequest(fd, object_id1, data_size1, metadata_size1, device_num1, object_type1));
   std::vector<uint8_t> data =

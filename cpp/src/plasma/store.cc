@@ -220,7 +220,7 @@ PlasmaError PlasmaStore::create_object(const ObjectID& object_id, int64_t data_s
   }
 #endif
 
-  if (object_type == ObjectType_Queue) {
+  if (object_type == ObjectType::Queue) {
     pending_per_queue_notifications_[object_id];
 
 /*
@@ -257,7 +257,7 @@ PlasmaError PlasmaStore::create_object(const ObjectID& object_id, int64_t data_s
   eviction_policy_.object_created(object_id);
   // Record that this client is using this object.
   add_to_client_object_ids(store_info_.objects[object_id].get(), client);
-  return PlasmaError_OK;
+  return PlasmaError::OK;
 }
 /*
 QueueBlockHeader* PlasmaStore::create_new_block(ObjectTableEntry* entry,
@@ -744,7 +744,7 @@ void PlasmaStore::push_notification(ObjectInfoT* object_info, int client_fd) {
   if (it != pending_notifications_.end()) {
     auto notification = create_object_info_buffer(object_info);
     it->second.object_notifications.emplace_back(std::move(notification));
-    send_notifications(it);
+    send_notifications(it->first, pending_notifications_);
   }
 }
 
@@ -955,7 +955,7 @@ Status PlasmaStore::process_message(Client* client) {
       ARROW_LOG(DEBUG) << "Disconnecting client on fd " << client->fd;
       disconnect_client(client->fd);
       break;
-    case MessageType_PlasmaQueueItemInfo:
+    case MessageType::PlasmaQueueItemInfo:
       RETURN_NOT_OK(ReadQueueItemInfo(input, input_size, &item_info));
       push_queue_notification(ObjectID::from_binary(item_info.object_id), &item_info);
       break;

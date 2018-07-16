@@ -152,7 +152,7 @@ bool PlasmaQueueWriter::Allocate(uint64_t& start_offset, uint32_t data_size) {
   return true;
 }
 
-int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_t& offset, uint64_t& seq_id) {
+PlasmaError PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_t& offset, uint64_t& seq_id) {
   uint64_t start_offset = sizeof(QueueHeader);
   bool should_create_block = FindStartOffset(data_size, start_offset);
 
@@ -165,7 +165,7 @@ int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_t& offse
   // evicting some existing blocks. Try to allocate the space for new item.
   bool succeed = Allocate(start_offset, required_size);
   if (!succeed) {
-    return PlasmaError_OutOfMemory;
+    return PlasmaError::OutOfMemory;
   }
 
   seq_id_++;
@@ -225,7 +225,7 @@ int PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_t& offse
   // If new block needed, create & initialize new block.
 
   // Append the entry to the end of this block.
-  return PlasmaError_OK;
+  return PlasmaError::OK;
 }
 
 
@@ -239,7 +239,7 @@ PlasmaQueueReader::PlasmaQueueReader(uint8_t* buffer, uint64_t buffer_size) :
   ARROW_CHECK(buffer_ != nullptr);
 }
 
-int PlasmaQueueReader::SetStartSeqId(uint64_t seq_id) {
+PlasmaError PlasmaQueueReader::SetStartSeqId(uint64_t seq_id) {
   // if seq is current seq + 1
   // then look at current block.
 
@@ -251,7 +251,7 @@ int PlasmaQueueReader::SetStartSeqId(uint64_t seq_id) {
   
   if (queue_header_->first_block_offset == INVALID_OFFSET) {
      curr_seq_id_ = 0;
-     return PlasmaError_ObjectNonexistent; 
+     return PlasmaError::ObjectNonexistent; 
   }
 
   if (curr_block_header_ != nullptr) {
@@ -259,7 +259,7 @@ int PlasmaQueueReader::SetStartSeqId(uint64_t seq_id) {
       seq_id <= curr_block_header_->end_seq_id) {
         curr_seq_id_ = seq_id;
         // already ref-cnted, no need to add refcnt.
-        return PlasmaError_OK;
+        return PlasmaError::OK;
     }
   }
 
@@ -271,7 +271,7 @@ int PlasmaQueueReader::SetStartSeqId(uint64_t seq_id) {
     if (seq_id < queue_block_header->start_seq_id) {
       // This seq id doesn't exist. 
       queue_block_header->ref_count--;
-      return PlasmaError_ObjectNonexistent;
+      return PlasmaError::ObjectNonexistent;
     }
 
     // seq_id >= queue_block_header->start_seq_id
@@ -281,7 +281,7 @@ int PlasmaQueueReader::SetStartSeqId(uint64_t seq_id) {
        curr_block_header_ = queue_block_header;
        curr_seq_id_ = seq_id;
 
-       return PlasmaError_OK;      
+       return PlasmaError::OK;      
     }
 
     // Examine next block. 
@@ -289,10 +289,10 @@ int PlasmaQueueReader::SetStartSeqId(uint64_t seq_id) {
     queue_block_header->ref_count--;
   }
 
-  return PlasmaError_ObjectNonexistent; 
+  return PlasmaError::ObjectNonexistent; 
 }
 
-int PlasmaQueueReader::GetNext(uint8_t*& data, uint32_t& data_size, uint64_t& seq_id) {
+PlasmaError PlasmaQueueReader::GetNext(uint8_t*& data, uint32_t& data_size, uint64_t& seq_id) {
   
   // Check if still in current block. 
   // if not, move to next block. Add refcnt to next block, and release refcnt to current block.
@@ -301,7 +301,7 @@ int PlasmaQueueReader::GetNext(uint8_t*& data, uint32_t& data_size, uint64_t& se
     // If this is called for the first time, initialize it (if queue does have items).
     if (first_block_offset == INVALID_OFFSET) {
       // queue is empty.
-      return PlasmaError_ObjectNonexistent;
+      return PlasmaError::ObjectNonexistent;
     }
     
     // set curr_block_header_.
@@ -316,7 +316,7 @@ int PlasmaQueueReader::GetNext(uint8_t*& data, uint32_t& data_size, uint64_t& se
     curr_block_header_->ref_count++; // will be released when client release the item.
     outstanding_seq_ids_[seq_id] = curr_block_header_;
 
-    return PlasmaError_OK;
+    return PlasmaError::OK;
 
   }
 
@@ -327,7 +327,7 @@ int PlasmaQueueReader::GetNext(uint8_t*& data, uint32_t& data_size, uint64_t& se
     if (next_block_offset == INVALID_OFFSET) {
       // next block is empty. return failure.
       // XXX in this case, should we update curr seqid and curr block?
-      return PlasmaError_ObjectNonexistent;
+      return PlasmaError::ObjectNonexistent;
     }
  
     auto last_block_header = curr_block_header_;
@@ -345,18 +345,18 @@ int PlasmaQueueReader::GetNext(uint8_t*& data, uint32_t& data_size, uint64_t& se
   curr_block_header_->ref_count++;  // will be released when client release the item.
   outstanding_seq_ids_[seq_id] = curr_block_header_;
 
-  return PlasmaError_OK;
+  return PlasmaError::OK;
 }
 
-int PlasmaQueueReader::Release(uint64_t seq_id) {
+PlasmaError PlasmaQueueReader::Release(uint64_t seq_id) {
   auto it = outstanding_seq_ids_.find(seq_id);
   if (it == outstanding_seq_ids_.end()) {
-    return PlasmaError_ObjectNonexistent;
+    return PlasmaError::ObjectNonexistent;
   }
 
   it->second->ref_count--;
   outstanding_seq_ids_.erase(it);
-  return PlasmaError_OK;
+  return PlasmaError::OK;
 }
 /*
 QueueBlockHeader* PlasmaClient::Impl::create_new_block(uint8_t* pointer,
@@ -422,7 +422,7 @@ Status PlasmaStore::PushQueue(const ObjectID& object_id, uint8_t* data, int64_t 
     /// Create new block
     block_header = create_new_block(entry->pointer, queue_header, block_header, offset);
     if (block_header == nullptr) {
-      return PlasmaError_OutOfMemory;
+      return PlasmaError::OutOfMemory;
     }
   }
   memcpy(p + block_header->item_offsets[offset], data, data_size);

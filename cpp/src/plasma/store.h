@@ -109,7 +109,7 @@ class PlasmaStore {
   ///    cannot create the object. In this case, the client should not call
   ///    plasma_release.
   PlasmaError create_object(const ObjectID& object_id, int64_t data_size, int64_t metadata_size,
-                    int device_num, Client* client, PlasmaObject* result, ObjectType object_type = ObjectType_Default);
+                    int device_num, Client* client, PlasmaObject* result, ObjectType object_type = ObjectType::Default);
 
   int create_queue_item(const ObjectID& object_id, int64_t data_size, SimpleQueueItemRecord* new_record);
 
