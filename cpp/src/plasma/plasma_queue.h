@@ -116,52 +116,6 @@ namespace plasma {
 
   };
 
-  class PlasmaQueueReader {
-  public:
-    PlasmaQueueReader(uint8_t* buffer, uint64_t buffer_size);
-
-    //int Get(uint8_t*& data, uint32_t& data_size /*, uint64_t* seq_id */);
-    
-    PlasmaError GetNext(uint8_t*& data, uint32_t& data_size, uint64_t& seq_id);
-
-    PlasmaError SetStartSeqId(uint64_t seq_id);
-    
-    PlasmaError Release(uint64_t seq_id);
-  private:
-    
-    // Points to start of the ring buffer.
-    uint8_t* buffer_;
-    // Size of the ring buffer.
-    uint64_t buffer_size_;
-
-    QueueHeader* queue_header_;
-
-    // The last seq id to be read.
-    uint64_t curr_seq_id_;
-
-    QueueBlockHeader* curr_block_header_;
-
-    std::unordered_map<uint64_t, QueueBlockHeader*> outstanding_seq_ids_;
-  };  
-/*
- struct QueueHeader {
-    // Current seq ID in the queue. This should only be used by the writer.
-    uint64_t cur_seq_id;
-    // Sealed seq ID, this is the largest valid ID for client to read.
-    uint64_t sealed_seq_id;
-    // Offset of the first block relative to the end of QueueHeader. -1 for invalid.
-    uint64_t first_block_offset;
-    // Offset of the last block relative to the end of QueueHeader. -1 for invalid.
-    uint64_t last_block_offset_;    
-
-    QueueBlockHeader *firset_block_header;
-    QueueBlockHeader *cur_block_header;
-    /// When the queue is not full, the boundary is the queue bounary.
-    /// When the queue is full, we will retire a block the next block 
-    /// will be the boundary.
-    void *cur_boundary;
-  };
-  */
 }  // namespace plasma
 
 #endif  // PLASMA_QUEUE_H
