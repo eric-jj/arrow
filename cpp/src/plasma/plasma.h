@@ -39,6 +39,7 @@
 #include "arrow/util/macros.h"
 #include "plasma/common.h"
 #include "plasma/common_generated.h"
+#include "plasma/plasma_generated.h"
 
 #ifdef PLASMA_GPU
 #include "arrow/gpu/cuda_api.h"
@@ -99,7 +100,9 @@ enum class object_state : int {
   /// Object was created but not sealed in the local Plasma Store.
   PLASMA_CREATED = 1,
   /// Object is sealed and stored in the local Plasma Store.
-  PLASMA_SEALED
+  PLASMA_SEALED = 2,
+  /// Object is a queue
+  // PLASMA_QUEUE = 3
 };
 
 enum class object_status : int {
@@ -186,6 +189,8 @@ ObjectTableEntry* get_object_table_entry(PlasmaStoreInfo* store_info,
 int warn_if_sigpipe(int status, int client_sock);
 
 std::unique_ptr<uint8_t[]> create_object_info_buffer(ObjectInfoT* object_info);
+
+std::unique_ptr<uint8_t[]> create_queue_item_buffer(PlasmaQueueItemInfoT* item_info);
 
 }  // namespace plasma
 

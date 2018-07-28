@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <queue>
 
 #include "plasma/common.h"
 #include "plasma/events.h"
@@ -56,6 +57,22 @@ struct Client {
   int notification_fd;
 };
 
+struct SimpleQueueItemRecord {
+  SimpleQueueItemRecord() : seq_id(0), data_offset(0), data_size(0) {}
+  uint64_t seq_id;
+  uint64_t data_offset;
+  uint32_t data_size;
+};
+
+struct SimpleQueueData {
+  uint8_t* pointer;
+  uint64_t size;
+
+  std::queue<SimpleQueueItemRecord> queue;
+};
+
+static const int32_t QUEUE_BLOCK_SIZE = 1000; 
+
 class PlasmaStore {
  public:
   using NotificationMap = std::unordered_map<int, NotificationQueue>;
@@ -80,6 +97,7 @@ class PlasmaStore {
   ///        device_num = 0 corresponds to the host,
   ///        device_num = 1 corresponds to GPU0,
   ///        device_num = 2 corresponds to GPU1, etc.
+  /// @param object_type Type of the object, current supported types are Default and Queue.
   /// @param client The client that created the object.
   /// @param result The object that has been created.
   /// @return One of the following error codes:
@@ -90,9 +108,10 @@ class PlasmaStore {
   ///  - PlasmaError::OutOfMemory, if the store is out of memory and
   ///    cannot create the object. In this case, the client should not call
   ///    plasma_release.
-  PlasmaError create_object(const ObjectID& object_id, int64_t data_size,
-                            int64_t metadata_size, int device_num, Client* client,
-                            PlasmaObject* result);
+  PlasmaError create_object(const ObjectID& object_id, int64_t data_size, int64_t metadata_size,
+                    int device_num, Client* client, PlasmaObject* result, ObjectType object_type = ObjectType::Default);
+
+  int create_queue_item(const ObjectID& object_id, int64_t data_size, SimpleQueueItemRecord* new_record);
 
   /// Abort a created but unsealed object. If the client is not the
   /// creator, then the abort will fail.
@@ -158,6 +177,10 @@ class PlasmaStore {
   /// @param client The client making this request.
   void subscribe_to_updates(Client* client);
 
+  void subscribe_to_queue_updates(Client* client);
+
+  void subscribe_to_queue_updates(Client* client, const ObjectID& object_id);
+
   /// Connect a new client to the PlasmaStore.
   ///
   /// @param listener_sock The socket that is listening to incoming connections.
@@ -170,12 +193,16 @@ class PlasmaStore {
 
   NotificationMap::iterator send_notifications(NotificationMap::iterator it);
 
+  void send_notifications(int client_fd, std::unordered_map<int, NotificationQueue>& store_pending_notifications);
+
   Status process_message(Client* client);
 
  private:
   void push_notification(ObjectInfoT* object_notification);
 
   void push_notification(ObjectInfoT* object_notification, int client_fd);
+
+  void push_queue_notification(const ObjectID& object_id, PlasmaQueueItemInfoT* item_info);
 
   void add_to_client_object_ids(ObjectTableEntry* entry, Client* client);
 
@@ -209,6 +236,10 @@ class PlasmaStore {
 #ifdef PLASMA_GPU
   arrow::gpu::CudaDeviceManager* manager_;
 #endif
+
+  NotificationMap pending_queue_notifications_;
+
+  std::unordered_map<ObjectID, NotificationMap> pending_per_queue_notifications_;
 };
 
 }  // namespace plasma

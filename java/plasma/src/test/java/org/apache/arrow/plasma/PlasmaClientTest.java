@@ -23,6 +23,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.Date;
+import java.text.*;
 
 public class PlasmaClientTest {
 
@@ -33,7 +35,7 @@ public class PlasmaClientTest {
     private int storePort;
 
     private ObjectStoreLink pLink;
-
+    private ObjectStoreLink pLink2;
 
     public PlasmaClientTest() throws Exception{
         try {
@@ -45,6 +47,7 @@ public class PlasmaClientTest {
             this.startObjectStore(plasmaStorePath);
             System.loadLibrary("plasma_java");
             pLink = new PlasmaClient(this.getStoreAddress(), "", 0);
+            pLink2 = new PlasmaClient(this.getStoreAddress(), "", 0);
         }
         catch (Throwable t) {
             cleanup();
@@ -69,7 +72,7 @@ public class PlasmaClientTest {
     }
 
     private void startObjectStore(String plasmaStorePath) {
-        int occupiedMemoryMB = 10;
+        int occupiedMemoryMB = 200;
         long memoryBytes = occupiedMemoryMB * 1000000;
         int numRetries = 10;
         Process p = null;
@@ -155,19 +158,109 @@ public class PlasmaClientTest {
         boolean notExsit = pLink.contains(id3);
         assert !notExsit;
         System.out.println("Plasma java client contains test success.");
-        cleanup();
-        System.out.println("All test success.");
 
     }
 
+    public void doPlasmaPerfTest() {
+        System.out.println("Start plasma perf test.");
+
+        int numOfItems = 100 * 1000;
+
+        String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date());
+        System.out.println("put start......" + timeStamp);
+        byte[] obj_id =  new byte[20];
+        byte[] value = new byte[4];
+        byte[] metadata = new byte[2];
+        Arrays.fill(metadata, (byte)0);
+        for (int i = 0; i < numOfItems; i++) {
+            FillIntToByteArray(obj_id, i);
+            FillIntToByteArray(value, i);
+            pLink.put(obj_id, value, metadata);
+        }
+        timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date());
+        System.out.println("put end......" + timeStamp);
+
+        int timeoutMs = 3000;
+        timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date());
+        System.out.println("get start......" + timeStamp);        
+        for (int i = 0; i < numOfItems; i++) {
+            FillIntToByteArray(obj_id, i);
+            byte[] result = pLink2.get(obj_id, timeoutMs, false);
+            assert i == byteArrayToInt(result);
+        }
+        timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date());
+        System.out.println("get end......" + timeStamp);        
+        System.out.println("Plasma perf test success.");
+    }
+
+    public void doPlasmaQueuePerfTest() {
+        System.out.println("Start plasma queue test.");
+
+        int timeoutMs = 3000;
+        byte[] id9 =  new byte[20];
+        Arrays.fill(id9, (byte)9);
+
+        pLink.createQueue(id9, 100 * 1000 * 1000);
+        pLink2.getQueue(id9, timeoutMs);
+
+        int numOfItems = 100 * 1000;
+
+        String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date());
+        System.out.println("push_queue start......" + timeStamp);        
+        for (int i = 0; i < numOfItems; i++) {
+            pLink.pushQueue(id9, intToByteArray(i));
+        }
+        timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date());
+        System.out.println("push_queue end......" + timeStamp);        
+
+        timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date());
+        System.out.println("get_queue start......" + timeStamp);          
+        for (int i = 0; i < numOfItems; i++) {
+            byte[] result = pLink2.readQueue(id9, -1, -1);
+            assert i == byteArrayToInt(result);
+        }
+        timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss.SSS").format(new Date());
+        System.out.println("get_queue end......" + timeStamp);           
+        System.out.println("Plasma queue test success.");
+    }
+     
     public String getStoreAddress() {
         return storeSuffix+storePort;
     }
+
+    public static int byteArrayToInt(byte[] b) {  
+        return   b[3] & 0xFF |  
+                (b[2] & 0xFF) << 8 |  
+                (b[1] & 0xFF) << 16 |  
+                (b[0] & 0xFF) << 24;  
+    }  
+      
+    public static byte[] intToByteArray(int a) {  
+        return new byte[] {  
+            (byte) ((a >> 24) & 0xFF),  
+            (byte) ((a >> 16) & 0xFF),     
+            (byte) ((a >> 8) & 0xFF),     
+            (byte) (a & 0xFF)  
+        };  
+    }
+
+    public static void FillIntToByteArray(byte[] b, int a) {  
+        // assert byte.length >= 4.
+        Arrays.fill(b, (byte)0);
+        b[0] = (byte) ((a >> 24) & 0xFF);
+        b[1] = (byte) ((a >> 16) & 0xFF);    
+        b[2] = (byte) ((a >> 8) & 0xFF);   
+        b[3] = (byte) (a & 0xFF);
+    }
+    
     public static void main(String[] args) throws Exception {
 
         PlasmaClientTest plasmaClientTest = new PlasmaClientTest();
         plasmaClientTest.doTest();
-
+        plasmaClientTest.doPlasmaPerfTest();
+        plasmaClientTest.doPlasmaQueuePerfTest();
+        plasmaClientTest.cleanup();
+        System.out.println("All test success.");
     }
 
 }

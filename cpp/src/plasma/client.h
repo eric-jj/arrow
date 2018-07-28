@@ -22,12 +22,14 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include "arrow/buffer.h"
 #include "arrow/status.h"
 #include "arrow/util/macros.h"
 #include "arrow/util/visibility.h"
 #include "plasma/common.h"
+#include "plasma/plasma_queue.h"
 
 using arrow::Buffer;
 using arrow::Status;
@@ -323,8 +325,38 @@ class ARROW_EXPORT PlasmaClient {
   ///         connection to the manager, this is -1.
   int get_manager_fd() const;
 
+  /// Interfaces that are related to Queue.
+  Status CreateQueue(const ObjectID& object_id, int64_t data_size,
+                            std::shared_ptr<Buffer>* data, int device_num=0);
+
+  Status GetQueue(const ObjectID& object_id, int64_t timeout_ms, int* fd, bool local_only = false, uint64_t start_seq_id = 0);
+
+  Status PushQueueItem(const ObjectID& object_id, uint8_t* data, uint32_t data_size);
+
+  Status GetQueueItem(const ObjectID& object_id, uint8_t*& data, uint32_t& data_size, uint64_t& seq_id);
+
+  // Subscribe updates for queue specified by object id.
+  Status SubscribeQueue(const ObjectID& object_id, int* fd);
+
+  // Subscribe updates for all queues in this store.
+  // This is supposed to be used by ObjectManager.
+  Status SubscribeQueue(int* fd);
+
+  Status GetQueueNotification(int fd, uint64_t* seq_id, uint64_t* data_offset, uint32_t* data_size);
+  
+  Status CreateQueueItem(const ObjectID& object_id, uint32_t data_size, std::shared_ptr<Buffer>* data, uint64_t& seq_id);
+
+  Status SealQueueItem(const ObjectID& object_id, uint64_t seq_id, std::shared_ptr<Buffer> data);
+
+  Status GetQueueItem(const ObjectID& object_id, ObjectBuffer* object_buffer, uint64_t& seq_id);
+
+  Status GetQueueItem(const ObjectID& object_id, std::shared_ptr<Buffer>* buffer, uint64_t& seq_id);
  private:
+
+  Status FetchQueue(const ObjectID& object_id);
+
   friend class PlasmaBuffer;
+  friend class PlasmaQueueItemBuffer;
   FRIEND_TEST(TestPlasmaStore, GetTest);
   FRIEND_TEST(TestPlasmaStore, LegacyGetTest);
   FRIEND_TEST(TestPlasmaStore, AbortTest);

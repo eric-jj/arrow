@@ -66,6 +66,15 @@ enum MessageType:long {
   // object store that requested the data. For each transfer, multiple
   // reply messages get sent. Each one contains a fixed number of bytes.
   PlasmaDataReply,
+  // Plasma queue.
+  PlasmaSubscribeQueueRequest,
+  PlasmaQueueSubscribeRequest,
+  PlasmaQueueRemoteSubscribeRequest,
+  PlasmaFetchQueueInfoRequest,
+  PlasmaQueueItemInfo,
+  PlasmaQueuePushItem,
+  PlasmaPushQueueItemRequest,
+  PlasmaPushQueueItemReply,
   // Object notifications.
   PlasmaNotification
 }
@@ -103,6 +112,13 @@ struct PlasmaObjectSpec {
   device_num: int;
 }
 
+enum ObjectType:int {
+  // Normal object.
+  Default,
+  // Queue object.
+  Queue
+}
+
 table PlasmaCreateRequest {
   // ID of the object to be created.
   object_id: string;
@@ -112,6 +128,8 @@ table PlasmaCreateRequest {
   metadata_size: ulong;
   // Device to create buffer on.
   device_num: int;
+  // Type of the object.
+  object_type: ObjectType;
 }
 
 table CudaHandle {
@@ -335,3 +353,72 @@ table PlasmaDataReply {
   // Size of the metadata in bytes.
   metadata_size: ulong;
 }
+
+table PlasmaNewItemRequest {
+  // ID of the object that will be sent.
+  object_id: string;
+  // SeqID of this item.
+  seq_id: ulong;
+  // New item in the queue.
+  data: string;
+  // Current block offset to the beginning of the queue.
+  block_offset: ulong;
+}
+
+table PlasmaPushQueueItemRequest {
+  // ID of the object to be created.
+  object_id: string;
+  // The size of the object's data in bytes.
+  data_size: ulong;
+}
+
+table PlasmaPushQueueItemReply {
+  // ID of the object that was created.
+  object_id: string;
+  // The offset in bytes in the memory mapped file of the data.
+  data_offset: ulong;
+  // The size in bytes of the data.
+  data_size: ulong; 
+  // SeqID for this item.
+  seq_id: ulong;
+  // Error that occurred for this call.
+  error: PlasmaError;
+}
+
+// Subscribe updates for a given queue in local store.
+table PlasmaQueueSubscribeRequest {
+  // ID of the queue object.
+  object_id: string;
+}
+
+// Subscribe updates for all queues in local store.
+table PlasmaSubscribeQueueRequest {
+}
+
+table PlasmaQueueItemInfo {  
+  object_id: string; 
+  // Index of the memory segment (= memory mapped file) that
+  // this queue item is allocated in.
+  segment_index: int;
+  // Sequence ID for queue item.
+  seq_id: ulong;
+  // The offset in bytes in the memory mapped file of the data.
+  data_offset: ulong;
+  // The size in bytes of the data.
+  data_size: ulong;
+}
+
+table PlasmaFetchQueueInfoRequest {
+  // IDs of objects to be gotten.
+  object_id: string;
+}
+
+table PlasmaQueueRemoteSubscribeRequest {
+  // ID of the object that is requested.
+  object_id: string;
+  // The host address where the data shall be sent to.
+  address: string;
+  // The port of the manager the data shall be sent to.
+  port: int;
+}
+

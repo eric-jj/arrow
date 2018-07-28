@@ -77,6 +77,7 @@ set(PLASMA_SRCS
   io.cc
   malloc.cc
   plasma.cc
+  plasma_queue.cc
   protocol.cc
   thirdparty/ae/ae.c
   thirdparty/xxhash.cc)
@@ -146,6 +147,7 @@ install(FILES
   events.h
   plasma.h
   "${OUTPUT_DIR}/plasma_generated.h"
+  plasma_queue.h
   protocol.h
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/plasma")
 

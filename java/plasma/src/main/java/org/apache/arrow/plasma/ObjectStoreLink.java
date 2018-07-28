@@ -60,6 +60,39 @@ public interface ObjectStoreLink {
   List<byte[]> get(byte[][] objectIds, int timeoutMs, boolean isMetadata);
 
   /**
+   * Create a plasma queue in the local plasma store.
+   *
+   * @param totalBytes Buffer size of the plasma queue in the object store.
+   */
+  void createQueue(byte[] objectId, int totalBytes);
+
+  /**
+   * Put a obj into the plasma queue.
+   *
+   * @param objectId The object ID of the plasma queue.
+   * @param value The value to put in the plasma queue.
+   */
+  void pushQueue(byte[] objectId, byte[] value);
+
+  /**
+   * Subscribe a plasma queue.
+   *
+   * @param objectId The object ID of the plasma queue.
+   * @param timeoutMs Return to the caller after <tt>timeoutMs</tt> milliseconds.
+   */
+  void getQueue(byte[] objectId, int timeoutMs);
+
+  /**
+   * Get a obj from a plasma queue.
+   *
+   * @param objectId The object ID of the plasma queue.
+   * @param index The reading index of the plasma queue.
+   * @param timeoutMs Return to the caller after <tt>timeoutMs</tt> milliseconds.
+   * @return PlasmaBuffer wrapping object.
+   */
+  byte[] readQueue(byte[] objectId, long index, int timeoutMs);
+
+  /**
    * Wait until <tt>numReturns</tt> objects in <tt>objectIds</tt> are ready.
    *
    * @param objectIds List of object IDs to wait for.

@@ -43,10 +43,10 @@ Status PlasmaReceive(int sock, MessageType message_type, std::vector<uint8_t>* b
 /* Plasma Create message functions. */
 
 Status SendCreateRequest(int sock, ObjectID object_id, int64_t data_size,
-                         int64_t metadata_size, int device_num);
+                         int64_t metadata_size, int device_num, ObjectType object_type);
 
 Status ReadCreateRequest(uint8_t* data, size_t size, ObjectID* object_id,
-                         int64_t* data_size, int64_t* metadata_size, int* device_num);
+                         int64_t* data_size, int64_t* metadata_size, int* device_num, ObjectType* object_type);
 
 Status SendCreateReply(int sock, ObjectID object_id, PlasmaObject* object,
                        PlasmaError error, int64_t mmap_size);
@@ -194,6 +194,38 @@ Status SendDataReply(int sock, ObjectID object_id, int64_t object_size,
 
 Status ReadDataReply(uint8_t* data, size_t size, ObjectID* object_id,
                      int64_t* object_size, int64_t* metadata_size);
+
+// PushQueue messages 
+Status SendPushQueueItemRequest(int sock, ObjectID object_id, int64_t data_size);
+
+Status ReadPushQueueItemRequest(uint8_t* data, size_t size, ObjectID* object_id, int64_t* data_size);
+
+Status SendPushQueueItemReply(int sock, ObjectID object_id, uint64_t data_offset, uint64_t data_size,
+  uint64_t seq_id, int error_code);
+
+Status ReadPushQueueItemReply(uint8_t* data, size_t size, ObjectID* object_id,
+  uint64_t* data_offset, uint64_t* data_size, uint64_t* seq_id);                      
+
+// Subscribe one queue.
+Status SendQueueSubscribeRequest(int sock, const ObjectID& object_id);
+
+Status ReadQueueSubscribeRequest(uint8_t* data, size_t size, ObjectID* object_id);
+
+// Subscribe all queues.
+Status SendSubscribeQueueRequest(int sock);
+
+Status SendQueueItemInfo(int sock, ObjectID object_id, uint64_t seq_id, uint64_t offset, uint32_t data_size);
+
+Status ReadQueueItemInfo(uint8_t* data, size_t size, PlasmaQueueItemInfoT* item_info);
+
+Status SendFetchQueueInfoRequest(int sock, const ObjectID& object_id);
+
+Status ReadFetchQueueInfoRequest(uint8_t* data, size_t size, ObjectID* object_id);
+
+Status SendQueueRemoteSubscribeRequest(int sock, ObjectID object_id, const char* address, int port);
+
+Status ReadQueueRemoteSubscribeRequest(uint8_t* data, size_t size, ObjectID* object_id, char** address,
+  int* port);
 
 }  // namespace plasma
 

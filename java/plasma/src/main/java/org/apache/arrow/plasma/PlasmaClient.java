@@ -83,6 +83,53 @@ public class PlasmaClient implements ObjectStoreLink {
   }
 
   @Override
+  public void createQueue(byte[] objectId, int totalBytes) {
+    try {
+      PlasmaClientJNI.createQueue(conn, objectId, totalBytes);
+    } catch (Exception e) {
+      System.err.println("ObjectId " + objectId + " error at PlasmaClient createQueue");
+      e.printStackTrace();
+    }
+  }
+
+  @Override
+  public void pushQueue(byte[] objectId, byte[] value) {
+    try {
+      PlasmaClientJNI.pushQueue(conn, objectId, value, value.length);
+    } catch (Exception e) {
+      System.err.println("ObjectId " + objectId + " error at PlasmaClient pushQueue");
+      e.printStackTrace();
+    }
+  }
+
+  @Override
+  public void getQueue(byte[] objectId, int timeoutMs) {
+    try {
+      PlasmaClientJNI.getQueue(conn, objectId, timeoutMs);
+    } catch (Exception e) {
+      System.err.println("ObjectId " + objectId + " error at PlasmaClient getQueue");
+      e.printStackTrace();
+    }
+  }
+
+  @Override
+  public byte[] readQueue(byte[] objectId, long index, int timeoutMs) {
+    ByteBuffer buf = null;
+    try {
+      buf = PlasmaClientJNI.readQueue(conn, objectId, index, timeoutMs);
+    } catch (Exception e) {
+      System.err.println("ObjectId " + objectId + " error at PlasmaClient readQueue");
+      e.printStackTrace();
+    }
+    byte[] ret = null;
+    if (buf != null) {
+      ret = new byte[buf.remaining()];
+      buf.get(ret);
+    }
+    return ret;
+  }
+
+  @Override
   public List<byte[]> wait(byte[][] objectIds, int timeoutMs, int numReturns) {
     byte[][] readys = PlasmaClientJNI.wait(conn, objectIds, timeoutMs, numReturns);
 

@@ -31,6 +31,14 @@ public class PlasmaClientJNI {
 
   native public static ByteBuffer create(long conn, byte[] object_id, int size, byte[] metadata);
 
+  native public static void createQueue(long conn, byte[] object_id, int totalBytes);
+
+  native public static void pushQueue(long conn, byte[] object_id, byte[] value, int size);
+
+  native public static void getQueue(long conn, byte[] object_id, int timeout_ms);
+
+  native public static ByteBuffer readQueue(long conn, byte[] object_id, long index, int timeout_ms);
+
   native public static byte[] hash(long conn, byte[] object_id);
 
   native public static void seal(long conn, byte[] object_id);
