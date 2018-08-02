@@ -97,12 +97,13 @@ const auto kListListInt32 = list(kListInt32);
 
 Status MakeRandomInt32Array(int64_t length, bool include_nulls, MemoryPool* pool,
                             std::shared_ptr<Array>* out) {
-  std::shared_ptr<PoolBuffer> data;
-  RETURN_NOT_OK(test::MakeRandomInt32PoolBuffer(length, pool, &data));
+  std::shared_ptr<ResizableBuffer> data;
+  RETURN_NOT_OK(test::MakeRandomInt32Buffer(length, pool, &data));
   Int32Builder builder(int32(), pool);
+  RETURN_NOT_OK(builder.Resize(length));
   if (include_nulls) {
-    std::shared_ptr<PoolBuffer> valid_bytes;
-    RETURN_NOT_OK(test::MakeRandomBytePoolBuffer(length, pool, &valid_bytes));
+    std::shared_ptr<ResizableBuffer> valid_bytes;
+    RETURN_NOT_OK(test::MakeRandomByteBuffer(length, pool, &valid_bytes));
     RETURN_NOT_OK(builder.AppendValues(reinterpret_cast<const int32_t*>(data->data()),
                                        length, valid_bytes->data()));
     return builder.Finish(out);
@@ -127,6 +128,7 @@ Status MakeRandomListArray(const std::shared_ptr<Array>& child_array, int num_li
   std::vector<int32_t> offsets(
       num_lists + 1, 0);  // +1 so we can shift for nulls. See partial sum below.
   const uint32_t seed = static_cast<uint32_t>(child_array->length());
+
   if (num_lists > 0) {
     test::rand_uniform_int(num_lists, seed, 0, max_list_size, list_sizes.data());
     // make sure sizes are consistent with null
@@ -703,7 +705,7 @@ Status MakeDecimal(std::shared_ptr<RecordBatch>* out) {
   std::shared_ptr<Buffer> data, is_valid;
   std::vector<uint8_t> is_valid_bytes(length);
 
-  RETURN_NOT_OK(AllocateBuffer(default_memory_pool(), kDecimalSize * length, &data));
+  RETURN_NOT_OK(AllocateBuffer(kDecimalSize * length, &data));
 
   test::random_decimals(length, 1, kDecimalPrecision, data->mutable_data());
   test::random_null_bytes(length, 0.1, is_valid_bytes.data());

@@ -60,6 +60,9 @@ submission. The tasks are defined in `tasks.yml`
    repository](https://help.github.com/articles/creating-a-new-repository)
 2. Enable [TravisCI](https://travis-ci.org/getting_started) and
    [Appveyor](https://www.appveyor.com/docs/) integrations on it
+
+   - turn off Travis' [auto cancellation](https://docs.travis-ci.com/user/customizing-the-build/#Building-only-the-latest-commit) feature on branches
+
 3. Clone the newly created, by default the scripts looks for `crossbow` next to
    arrow repository.
 
@@ -69,7 +72,7 @@ submission. The tasks are defined in `tasks.yml`
 
 4. [Create a Personal Access
    Token](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/)
-5. Export the token as an environment variable:
+5. Locally export the token as an environment variable:
 
    ```bash
    export CROSSBOW_GITHUB_TOKEN=<token>
@@ -77,18 +80,32 @@ submission. The tasks are defined in `tasks.yml`
 
    > or pass as an argument to the CLI script `--github-token`
 
-6. Install the python dependencies for the script:
+6. Export the previously created GitHub token on both CI services:
+
+   Use `CROSSBOW_GITHUB_TOKEN` encrypted environment variable. You can set them
+   at the following URLs, where `ghuser` is the GitHub username and `ghrepo` is
+   the GitHub repository name (typically `crossbow`):
+
+   - TravisCI: `https://travis-ci.org/<ghuser>/<ghrepo>/settings`
+   - Appveyor: `https://ci.appveyor.com/project/<ghuser>/<ghrepo>/settings/environment`
+
+7. Install Python 3.6:
+
+   Miniconda is preferred, see installation instructions:
+   https://conda.io/docs/user-guide/install/index.html
+
+8. Install the python dependencies for the script:
 
    ```bash
-   conda install -y jinja2 pygit2 click pyyaml setuptools_scm github3.py
+   conda install -y jinja2 pygit2 click ruamel.yaml setuptools_scm github3.py python-gnupg
    ```
 
    ```bash
    # pygit2 requires libgit2: http://www.pygit2.org/install.html
-   pip install -y jinja2 pygit2 click pyyaml setuptools_scm github3.py
+   pip install jinja2 pygit2 click ruamel.yaml setuptools_scm github3.py python-gnupg
    ```
 
-7. Try running it:
+9. Try running it:
    ```bash
    $ python crossbow.py --help
    ```
@@ -127,7 +144,7 @@ The script does the following:
    to build conda recipes on linux it will create a new branch:
    `crossbow@build-<id>-conda-linux`.
 3. Pushes the modified branches to GitHub which triggers the builds.
-   For authentication it uses github oauth tokens described in the install
+   For authentication it uses GitHub OAuth tokens described in the install
    section.
 
 
@@ -150,14 +167,14 @@ The script accepts a pattern as a first argument to narrow the build scope:
 Run multiple builds:
 
 ```bash
-$ python crossbow.py submit linux-packages conda-linux wheel-win
+$ python crossbow.py submit debian-stretch conda-linux-py36 wheel-win-py36
 Repository: https://github.com/kszucs/arrow@tasks
 Commit SHA: 810a718836bb3a8cefc053055600bdcc440e6702
 Version: 0.9.1.dev48+g810a7188.d20180414
 Pushed branches:
- - linux-packages
- - conda-linux
- - wheel-win
+ - debian-stretch
+ - conda-linux-py36
+ - wheel-win-py36
 ```
 
 Just render without applying or committing the changes:
@@ -166,14 +183,14 @@ Just render without applying or committing the changes:
 $ python crossbow.py submit --dry-run task_name
 ```
 
-Run only `conda` package builds but on all platforms:
+Run only `conda` package builds and a Linux one:
 
 ```bash
-$ python crossbow.py submit conda-win conda-osx conda-linux
+$ python crossbow.py submit -g conda centos-7
 ```
 
 Run `wheel` builds:
 
 ```bash
-$ python crossbow.py submit wheel-osx wheel-linux wheel-win
+$ python crossbow.py submit --group wheel
 ```

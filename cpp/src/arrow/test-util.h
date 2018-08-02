@@ -124,8 +124,8 @@ inline Status CopyBufferFromVector(const std::vector<T>& values, MemoryPool* poo
                                    std::shared_ptr<Buffer>* result) {
   int64_t nbytes = static_cast<int>(values.size()) * sizeof(T);
 
-  auto buffer = std::make_shared<PoolBuffer>(pool);
-  RETURN_NOT_OK(buffer->Resize(nbytes));
+  std::shared_ptr<Buffer> buffer;
+  RETURN_NOT_OK(AllocateBuffer(pool, nbytes, &buffer));
   auto immutable_data = reinterpret_cast<const uint8_t*>(values.data());
   std::copy(immutable_data, immutable_data + nbytes, buffer->mutable_data());
   memset(buffer->mutable_data() + nbytes, 0,
@@ -284,25 +284,23 @@ static inline int64_t null_count(const std::vector<uint8_t>& valid_bytes) {
   return static_cast<int64_t>(std::count(valid_bytes.cbegin(), valid_bytes.cend(), '\0'));
 }
 
-Status MakeRandomInt32PoolBuffer(int64_t length, MemoryPool* pool,
-                                 std::shared_ptr<PoolBuffer>* pool_buffer,
-                                 uint32_t seed = 0) {
+Status MakeRandomInt32Buffer(int64_t length, MemoryPool* pool,
+                             std::shared_ptr<ResizableBuffer>* out, uint32_t seed = 0) {
   DCHECK(pool);
-  auto data = std::make_shared<PoolBuffer>(pool);
-  RETURN_NOT_OK(data->Resize(length * sizeof(int32_t)));
+  std::shared_ptr<ResizableBuffer> result;
+  RETURN_NOT_OK(AllocateResizableBuffer(pool, sizeof(int32_t) * length, &result));
   test::rand_uniform_int(length, seed, 0, std::numeric_limits<int32_t>::max(),
-                         reinterpret_cast<int32_t*>(data->mutable_data()));
-  *pool_buffer = data;
+                         reinterpret_cast<int32_t*>(result->mutable_data()));
+  *out = result;
   return Status::OK();
 }
 
-Status MakeRandomBytePoolBuffer(int64_t length, MemoryPool* pool,
-                                std::shared_ptr<PoolBuffer>* pool_buffer,
-                                uint32_t seed = 0) {
-  auto bytes = std::make_shared<PoolBuffer>(pool);
-  RETURN_NOT_OK(bytes->Resize(length));
-  test::random_bytes(length, seed, bytes->mutable_data());
-  *pool_buffer = bytes;
+Status MakeRandomByteBuffer(int64_t length, MemoryPool* pool,
+                            std::shared_ptr<ResizableBuffer>* out, uint32_t seed = 0) {
+  std::shared_ptr<ResizableBuffer> result;
+  RETURN_NOT_OK(AllocateResizableBuffer(pool, length, &result));
+  test::random_bytes(length, seed, result->mutable_data());
+  *out = result;
   return Status::OK();
 }
 

@@ -17,6 +17,7 @@
 
 import collections
 import datetime
+import pickle
 import pytest
 import struct
 import sys
@@ -24,7 +25,10 @@ import sys
 import numpy as np
 import pandas as pd
 import pandas.util.testing as tm
-import pickle
+try:
+    import pickle5
+except ImportError:
+    pickle5 = None
 
 import pyarrow as pa
 from pyarrow.pandas_compat import get_logical_type
@@ -35,9 +39,9 @@ def test_total_bytes_allocated():
     assert pa.total_allocated_bytes() == 0
 
 
-def test_getitem_NA():
+def test_getitem_NULL():
     arr = pa.array([1, None, 2])
-    assert arr[1] is pa.NA
+    assert arr[1] is pa.NULL
 
 
 def test_constructor_raises():
@@ -52,23 +56,27 @@ def test_list_format():
     result = fmt.array_format(arr)
     expected = """\
 [
-  [1],
-  NA,
-  [2,
-   3,
-   NA]
+  [
+    1
+  ],
+  null,
+  [
+    2,
+    3,
+    null
+  ]
 ]"""
     assert result == expected
 
 
 def test_string_format():
-    arr = pa.array(['', None, 'foo'])
+    arr = pa.array([u'', None, u'foo'])
     result = fmt.array_format(arr)
     expected = """\
 [
-  '',
-  NA,
-  'foo'
+  "",
+  null,
+  "foo"
 ]"""
     assert result == expected
 
@@ -85,6 +93,40 @@ def test_long_array_format():
   99
 ]"""
     assert result == expected
+
+
+def test_to_numpy_zero_copy():
+    arr = pa.array(range(10))
+    old_refcount = sys.getrefcount(arr)
+
+    np_arr = arr.to_numpy()
+    np_arr[0] = 1
+    assert arr[0] == 1
+
+    assert sys.getrefcount(arr) == old_refcount
+
+    arr = None
+    import gc
+    gc.collect()
+
+    # Ensure base is still valid
+    assert np_arr.base is not None
+    expected = np.arange(10)
+    expected[0] = 1
+    np.testing.assert_array_equal(np_arr, expected)
+
+
+def test_to_numpy_unsupported_types():
+    # ARROW-2871: Some primitive types are not yet supported in to_numpy
+    bool_arr = pa.array([True, False, True])
+
+    with pytest.raises(NotImplementedError):
+        bool_arr.to_numpy()
+
+    null_arr = pa.array([None, None, None])
+
+    with pytest.raises(NotImplementedError):
+        null_arr.to_numpy()
 
 
 def test_to_pandas_zero_copy():
@@ -240,7 +282,7 @@ def test_dictionary_from_numpy():
         assert d1[i].as_py() == dictionary[indices[i]]
 
         if mask[i]:
-            assert d2[i] is pa.NA
+            assert d2[i] is pa.NULL
         else:
             assert d2[i].as_py() == dictionary[indices[i]]
 
@@ -516,6 +558,10 @@ def test_unique_simple():
     for arr, expected in cases:
         result = arr.unique()
         assert result.equals(expected)
+        result = pa.column("column", arr).unique()
+        assert result.equals(expected)
+        result = pa.chunked_array([arr]).unique()
+        assert result.equals(expected)
 
 
 def test_dictionary_encode_simple():
@@ -532,6 +578,10 @@ def test_dictionary_encode_simple():
     for arr, expected in cases:
         result = arr.dictionary_encode()
         assert result.equals(expected)
+        result = pa.column("column", arr).dictionary_encode()
+        assert result.data.chunk(0).equals(expected)
+        result = pa.chunked_array([arr]).dictionary_encode()
+        assert result.chunk(0).equals(expected)
 
 
 def test_cast_time32_to_int():
@@ -587,7 +637,7 @@ def test_cast_date64_to_int():
     assert result.equals(expected)
 
 
-@pytest.mark.parametrize(
+pickle_test_parametrize = pytest.mark.parametrize(
     ('data', 'typ'),
     [
         ([True, False, True, True], pa.bool_()),
@@ -601,12 +651,63 @@ def test_cast_date64_to_int():
             pa.struct([pa.field('a', pa.int64()), pa.field('b', pa.string())]))
     ]
 )
+
+
+@pickle_test_parametrize
 def test_array_pickle(data, typ):
     # Allocate here so that we don't have any Arrow data allocated.
     # This is needed to ensure that allocator tests can be reliable.
     array = pa.array(data, type=typ)
-    result = pickle.loads(pickle.dumps(array))
-    assert array.equals(result)
+    for proto in range(0, pickle.HIGHEST_PROTOCOL + 1):
+        result = pickle.loads(pickle.dumps(array, proto))
+        assert array.equals(result)
+
+
+@pickle_test_parametrize
+def test_array_pickle5(data, typ):
+    # Test zero-copy pickling with protocol 5 (PEP 574)
+    picklemod = pickle5 or pickle
+    if pickle5 is None and picklemod.HIGHEST_PROTOCOL < 5:
+        pytest.skip("need pickle5 package or Python 3.8+")
+
+    array = pa.array(data, type=typ)
+    addresses = [buf.address if buf is not None else 0
+                 for buf in array.buffers()]
+
+    for proto in range(5, pickle.HIGHEST_PROTOCOL + 1):
+        buffers = []
+        pickled = picklemod.dumps(array, proto, buffer_callback=buffers.append)
+        result = picklemod.loads(pickled, buffers=buffers)
+        assert array.equals(result)
+
+        result_addresses = [buf.address if buf is not None else 0
+                            for buf in result.buffers()]
+        assert result_addresses == addresses
+
+
+@pytest.mark.parametrize(
+    'narr',
+    [
+        np.arange(10, dtype=np.int64),
+        np.arange(10, dtype=np.int32),
+        np.arange(10, dtype=np.int16),
+        np.arange(10, dtype=np.int8),
+        np.arange(10, dtype=np.uint64),
+        np.arange(10, dtype=np.uint32),
+        np.arange(10, dtype=np.uint16),
+        np.arange(10, dtype=np.uint8),
+        np.arange(10, dtype=np.float64),
+        np.arange(10, dtype=np.float32),
+        np.arange(10, dtype=np.float16),
+    ]
+)
+def test_to_numpy_roundtrip(narr):
+    arr = pa.array(narr)
+    assert narr.dtype == arr.to_numpy().dtype
+    np.testing.assert_array_equal(narr, arr.to_numpy())
+    np.testing.assert_array_equal(narr[:6], arr[:6].to_numpy())
+    np.testing.assert_array_equal(narr[2:], arr[2:].to_numpy())
+    np.testing.assert_array_equal(narr[2:6], arr[2:6].to_numpy())
 
 
 @pytest.mark.parametrize(

@@ -70,6 +70,9 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
   option(PYARROW_BUILD_PLASMA
     "Build the PyArrow Plasma integration"
     OFF)
+  option(PYARROW_USE_TENSORFLOW
+    "Build PyArrow with TensorFlow support"
+    OFF)
   option(PYARROW_BUILD_ORC
     "Build the PyArrow ORC integration"
     OFF)
@@ -177,6 +180,11 @@ set(LIBRARY_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
 
 # where to put generated binaries
 set(EXECUTABLE_OUTPUT_PATH "${BUILD_OUTPUT_ROOT_DIRECTORY}")
+
+if (PYARROW_USE_TENSORFLOW)
+  # TensorFlow uses the old GLIBCXX ABI, so we have to use it too
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=0")
+endif()
 
 ## Python and libraries
 find_package(PythonLibsNew REQUIRED)
@@ -449,15 +457,20 @@ foreach(module ${CYTHON_EXTENSIONS})
       # root of the pyarrow/ package so that libarrow/libarrow_python are able
       # to be loaded properly
       if(APPLE)
-        set(module_install_rpath "@loader_path")
+        set(module_install_rpath "@loader_path/")
       else()
         set(module_install_rpath "\$ORIGIN")
       endif()
-      list(LENGTH directories i)
-      while(${i} GREATER 0)
-        set(module_install_rpath "${module_install_rpath}/..")
-        math(EXPR i "${i} - 1" )
-      endwhile(${i} GREATER 0)
+
+      # XXX(wesm): ARROW-2326 this logic is only needed when we have Cython
+      # modules in interior directories. Since all of our C extensions and
+      # bundled libraries are in the same place, we can skip this part
+
+      # list(LENGTH directories i)
+      # while(${i} GREATER 0)
+      #   set(module_install_rpath "${module_install_rpath}/..")
+      #   math(EXPR i "${i} - 1" )
+      # endwhile(${i} GREATER 0)
 
       set_target_properties(${module_name} PROPERTIES
         INSTALL_RPATH ${module_install_rpath})

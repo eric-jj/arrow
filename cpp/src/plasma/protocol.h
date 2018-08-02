@@ -1,4 +1,4 @@
-// Licensed to the Apache Software Foundation (ASF) under one
+.gitignore// Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
 // regarding copyright ownership.  The ASF licenses this file
@@ -30,8 +30,13 @@ namespace plasma {
 
 using arrow::Status;
 
+using flatbuf::MessageType;
+using flatbuf::PlasmaError;
+using flatbuf::ObjectType;
+using flatbuf::PlasmaQueueItemInfoT;
+
 template <class T>
-bool verify_flatbuffer(T* object, uint8_t* data, size_t size) {
+bool VerifyFlatbuffer(T* object, uint8_t* data, size_t size) {
   flatbuffers::Verifier verifier(data, size);
   return object->Verify(verifier);
 }

@@ -163,6 +163,7 @@ matrix:
     language: cpp
     os: linux
     env:
+    - ARROW_TRAVIS_ORC=1
     - BUILD_TORCH_EXAMPLE=no
     - CC="gcc-4.9"
     - CXX="g++-4.9"
@@ -179,6 +180,8 @@ matrix:
   - compiler: clang
     osx_image: xcode8.3
     os: osx
+    env:
+    - ARROW_TRAVIS_ORC=1
     cache:
     addons:
     rvm: 2.2
@@ -219,6 +222,7 @@ matrix:
     - bash <(curl -s https://codecov.io/bash) || echo "Codecov did not collect coverage reports"
   # Go
   - language: go
+    go_import_path: github.com/apache/arrow
     os: linux
     go:
     - 1.10.x

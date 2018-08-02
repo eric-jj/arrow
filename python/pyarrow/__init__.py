@@ -51,8 +51,10 @@ import pyarrow.compat as compat
 
 
 # Workaround for https://issues.apache.org/jira/browse/ARROW-2657
+# and https://issues.apache.org/jira/browse/ARROW-2920
 if _sys.platform in ('linux', 'linux2'):
     compat.import_tensorflow_extension()
+    compat.import_pytorch_extension()
 
 
 from pyarrow.lib import cpu_count, set_cpu_count
@@ -85,7 +87,7 @@ from pyarrow.lib import (null, bool_,
                          Date32Array, Date64Array,
                          TimestampArray, Time32Array, Time64Array,
                          Decimal128Array, StructArray,
-                         ArrayValue, Scalar, NA,
+                         ArrayValue, Scalar, NA, _NULL as NULL,
                          BooleanValue,
                          Int8Value, Int16Value, Int32Value, Int64Value,
                          UInt8Value, UInt16Value, UInt32Value, UInt64Value,

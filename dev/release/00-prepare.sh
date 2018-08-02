@@ -31,7 +31,17 @@ if [ "$#" -eq 2 ]; then
   # Update changelog
   $SOURCE_DIR/update-changelog.sh $version
 
-  echo "prepare release ${version} rc ${rcnum} on tag ${tag} then reset to version ${nextVersionSNAPSHOT}"
+  echo "Updating .deb/.rpm changelogs for $version"
+  cd $SOURCE_DIR/../tasks/linux-packages
+  rake \
+    version:update \
+    ARROW_RELEASE_TIME="$(date +%Y-%m-%dT%H:%M:%S%z)" \
+    ARROW_VERSION=${version}
+  git add debian*/changelog yum/*.spec.in
+  git commit -m "[Release] Update .deb/.rpm changelogs for $version"
+  cd -
+
+  echo "prepare release ${version} on tag ${tag} then reset to version ${nextVersionSNAPSHOT}"
 
   cd "${SOURCE_DIR}/../../java"
 

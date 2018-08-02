@@ -27,6 +27,8 @@ export PARQUET_HOME=$ARROW_PYTHON_PARQUET_HOME
 export LD_LIBRARY_PATH=$ARROW_HOME/lib:$PARQUET_HOME/lib:$LD_LIBRARY_PATH
 export PYARROW_CXXFLAGS="-Werror"
 
+PYARROW_PYTEST_FLAGS=" -r sxX --durations=15 --parquet"
+
 PYTHON_VERSION=$1
 CONDA_ENV_DIR=$TRAVIS_BUILD_DIR/pyarrow-test-$PYTHON_VERSION
 
@@ -57,6 +59,11 @@ conda install -y -q pip \
 #   conda install -y -q pytorch torchvision -c soumith
 # fi
 
+if [ $TRAVIS_OS_NAME != "osx" ]; then
+  conda install -y -c conda-forge tensorflow
+  PYARROW_PYTEST_FLAGS="$PYARROW_PYTEST_FLAGS --tensorflow"
+fi
+
 # Re-build C++ libraries with the right Python setup
 mkdir -p $ARROW_CPP_BUILD_DIR
 pushd $ARROW_CPP_BUILD_DIR
@@ -76,6 +83,7 @@ cmake -GNinja \
       -DARROW_BUILD_TESTS=on \
       -DARROW_BUILD_UTILITIES=off \
       -DARROW_PLASMA=on \
+      -DARROW_TENSORFLOW=on \
       -DARROW_PYTHON=on \
       -DARROW_ORC=on \
       -DCMAKE_BUILD_TYPE=$ARROW_BUILD_TYPE \
@@ -94,13 +102,15 @@ pushd $ARROW_PYTHON_DIR
 
 # Other stuff pip install
 pip install -q -r requirements.txt
-if [ "$PYTHON_VERSION" == "2.7" ]; then
-  pip install -q futures
+if [ "$PYTHON_VERSION" == "3.6" ]; then
+    pip install -q pickle5
 fi
 if [ "$ARROW_TRAVIS_COVERAGE" == "1" ]; then
     export PYARROW_GENERATE_COVERAGE=1
     pip install -q coverage
 fi
+
+export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$ARROW_CPP_INSTALL/lib/pkgconfig
 
 export PYARROW_BUILD_TYPE=$ARROW_BUILD_TYPE
 export PYARROW_WITH_PARQUET=1
@@ -131,9 +141,9 @@ fi
 if [ "$ARROW_TRAVIS_COVERAGE" == "1" ]; then
     # Output Python coverage data in a persistent place
     export COVERAGE_FILE=$ARROW_PYTHON_COVERAGE_FILE
-    coverage run --append -m pytest -r sxX --durations=15 --parquet pyarrow/tests
+    coverage run --append -m pytest $PYARROW_PYTEST_FLAGS pyarrow/tests
 else
-    python -m pytest -r sxX --durations=15 --parquet pyarrow/tests
+    python -m pytest $PYARROW_PYTEST_FLAGS pyarrow/tests
 fi
 
 if [ "$ARROW_TRAVIS_COVERAGE" == "1" ]; then
@@ -182,7 +192,7 @@ if [ "$ARROW_TRAVIS_PYTHON_BENCHMARKS" == "1" ] && [ "$PYTHON_VERSION" == "3.6" 
   source activate pyarrow_asv
   pip install -q git+https://github.com/pitrou/asv.git@customize_commands
 
-  export PYARROW_WITH_PARQUET=0
+  export PYARROW_WITH_PARQUET=1
   export PYARROW_WITH_PLASMA=1
   export PYARROW_WITH_ORC=0
 

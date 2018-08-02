@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -17,25 +15,36 @@
 # specific language governing permissions and limitations
 # under the License.
 
-set -ex
+FROM ubuntu:18.04
 
-HERE=$(cd `dirname "${BASH_SOURCE[0]:-$0}"` && pwd)
+ENV DEBIAN_FRONTEND noninteractive
 
-source $HERE/../set_env_common.sh
-source $HERE/../setup_toolchain.sh
-source $HERE/../functions.sh
+ARG DEBUG
 
-git clone https://github.com/apache/arrow.git $ARROW_CHECKOUT
-
-use_clang
-
-bootstrap_python_env 3.6
-
-build_arrow
-build_parquet
-
-build_pyarrow
-
-$ARROW_CPP_BUILD_DIR/debug/io-hdfs-test
-
-python -m pytest -vv -r sxX -s $PYARROW_PATH --parquet --hdfs
+RUN \
+  quiet=$([ "${DEBUG}" = "yes" ] || echo "-qq") && \
+  apt update ${quiet} && \
+  apt install -y -V ${quiet} \
+    autoconf-archive \
+    build-essential \
+    cmake \
+    debhelper\
+    devscripts \
+    git \
+    gtk-doc-tools \
+    libboost-filesystem-dev \
+    libboost-regex-dev \
+    libboost-system-dev \
+    libgirepository1.0-dev \
+    libglib2.0-doc \
+    libjemalloc-dev \
+    libprotobuf-dev \
+    libprotoc-dev \
+    lsb-release \
+    nvidia-cuda-toolkit \
+    pkg-config \
+    protobuf-compiler \
+    python3-dev \
+    python3-numpy && \
+  apt clean && \
+  rm -rf /var/lib/apt/lists/*

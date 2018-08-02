@@ -17,25 +17,29 @@
 
 
 cdef _sequence_to_array(object sequence, object size, DataType type,
-                        CMemoryPool* pool):
+                        CMemoryPool* pool, c_bool from_pandas):
     cdef shared_ptr[CArray] out
     cdef int64_t c_size
     if type is None:
         if size is None:
             with nogil:
-                check_status(ConvertPySequence(sequence, pool, &out))
+                check_status(
+                    ConvertPySequence(sequence, pool, from_pandas, &out)
+                )
         else:
             c_size = size
             with nogil:
                 check_status(
-                    ConvertPySequence(sequence, c_size, pool, &out)
+                    ConvertPySequence(
+                        sequence, c_size, pool, from_pandas, &out
+                    )
                 )
     else:
         if size is None:
             with nogil:
                 check_status(
                     ConvertPySequence(
-                        sequence, type.sp_type, pool, &out,
+                        sequence, type.sp_type, pool, from_pandas, &out,
                     )
                 )
         else:
@@ -43,7 +47,8 @@ cdef _sequence_to_array(object sequence, object size, DataType type,
             with nogil:
                 check_status(
                     ConvertPySequence(
-                        sequence, c_size, type.sp_type, pool, &out,
+                        sequence, c_size, type.sp_type, pool, from_pandas,
+                        &out,
                     )
                 )
 
@@ -148,7 +153,7 @@ def array(object obj, type=None, mask=None,
     <pyarrow.array.Int64Array object at 0x7f9019e11208>
     [
       1,
-      NA
+      null
     ]
 
     Returns
@@ -178,7 +183,7 @@ def array(object obj, type=None, mask=None,
     else:
         if mask is not None:
             raise ValueError("Masks only supported with ndarray-like inputs")
-        return _sequence_to_array(obj, size, type, pool)
+        return _sequence_to_array(obj, size, type, pool, from_pandas)
 
 
 def asarray(values, type=None):
@@ -367,7 +372,39 @@ cdef class Array:
 
     def cast(self, object target_type, safe=True):
         """
-        Cast array values to another data type
+        Cast array values to another data type.
+
+        Example
+        -------
+
+        >>> from datetime import datetime
+        >>> import pyarrow as pa
+        >>> arr = pa.array([datetime(2010, 1, 1), datetime(2015, 1, 1)])
+        >>> arr.type
+        TimestampType(timestamp[us])
+
+        You can use ``pyarrow.DataType`` objects to specify the target type:
+
+        >>> arr.cast(pa.timestamp('ms'))
+        <pyarrow.lib.TimestampArray object at 0x10420eb88>
+        [
+          1262304000000,
+          1420070400000
+        ]
+        >>> arr.cast(pa.timestamp('ms')).type
+        TimestampType(timestamp[ms])
+
+        Alternatively, it is also supported to use the string aliases for these
+        types:
+
+        >>> arr.cast('timestamp[ms]')
+        <pyarrow.lib.TimestampArray object at 0x10420eb88>
+        [
+          1262304000000,
+          1420070400000
+        ]
+        >>> arr.cast('timestamp[ms]').type
+        TimestampType(timestamp[ms])
 
         Parameters
         ----------
@@ -505,10 +542,26 @@ cdef class Array:
             yield self.getitem(i)
 
     def __repr__(self):
-        from pyarrow.formatting import array_format
         type_format = object.__repr__(self)
-        values = array_format(self, window=10)
-        return '{0}\n{1}'.format(type_format, values)
+        return '{0}\n{1}'.format(type_format, str(self))
+
+    def format(self, int indent=0, int window=10):
+        cdef:
+            c_string result
+
+        with nogil:
+            check_status(
+                PrettyPrint(
+                    deref(self.ap),
+                    PrettyPrintOptions(indent, window),
+                    &result
+                )
+            )
+
+        return frombytes(result)
+
+    def __str__(self):
+        return self.format()
 
     def equals(Array self, Array other):
         return self.ap.Equals(deref(other.ap))
@@ -598,6 +651,28 @@ cdef class Array:
             check_status(ConvertArrayToPandas(options, self.sp_array,
                                               self, &out))
         return wrap_array_output(out)
+
+    def to_numpy(self):
+        """
+        EXPERIMENTAL: Construct a NumPy view of this array. Only supports
+        primitive arrays with the same memory layout as NumPy (i.e. integers,
+        floating point) without any nulls.
+
+        Returns
+        -------
+        arr : numpy.ndarray
+
+        """
+        if self.null_count:
+            raise NotImplementedError('NumPy array view is only supported '
+                                      'for arrays without nulls.')
+        if not is_primitive(self.type.id) or self.type.id == _Type_BOOL:
+            raise NotImplementedError('NumPy array view is only supported '
+                                      'for primitive types.')
+        buflist = self.buffers()
+        assert len(buflist) == 2
+        return np.frombuffer(buflist[-1], dtype=self.type.to_pandas_dtype())[
+            self.offset:self.offset + len(self)]
 
     def to_pylist(self):
         """

@@ -35,6 +35,7 @@ using arrow::Buffer;
 using arrow::Status;
 
 namespace plasma {
+
   static const uint64_t INVALID_OFFSET = -1;
   static const uint32_t QUEUE_BLOCK_SIZE = 1000; 
 
@@ -92,7 +93,7 @@ namespace plasma {
   public:
     PlasmaQueueWriter(uint8_t* buffer, uint64_t buffer_size);
 
-    PlasmaError Append(uint8_t* data, uint32_t data_size, uint64_t& offset, uint64_t& seq_id);
+    Status Append(uint8_t* data, uint32_t data_size, uint64_t& offset, uint64_t& seq_id);
 
     uint8_t* GetBuffer() { return buffer_; }
 

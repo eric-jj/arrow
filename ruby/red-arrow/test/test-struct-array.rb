@@ -15,18 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-class TestPoolBuffer < Test::Unit::TestCase
-  def setup
-    @buffer = Arrow::PoolBuffer.new
-  end
+class StructArrayTest < Test::Unit::TestCase
+  test("#[]") do
+    type = Arrow::StructDataType.new([
+      Arrow::Field.new("field1", :boolean),
+      Arrow::Field.new("field2", :uint64),
+    ])
+    builder = Arrow::StructArrayBuilder.new(type)
+    builder.append
+    builder.get_field_builder(0).append(true)
+    builder.get_field_builder(1).append(1)
+    builder.append
+    builder.get_field_builder(0).append(false)
+    builder.get_field_builder(1).append(2)
+    array = builder.finish
 
-  def test_resize
-    @buffer.resize(1)
-    assert_equal(1, @buffer.size)
-  end
-
-  def test_reserve
-    @buffer.reserve(1)
-    assert_equal(64, @buffer.capacity)
+    assert_equal([[true, false], [1, 2]],
+                 [array[0].to_a, array[1].to_a])
   end
 end

@@ -94,10 +94,9 @@ Status AllocateNullBitmap(MemoryPool* pool, int64_t length,
                           std::shared_ptr<ResizableBuffer>* out) {
   int64_t null_bytes = BitUtil::BytesForBits(length);
   std::shared_ptr<ResizableBuffer> null_bitmap;
+  RETURN_NOT_OK(AllocateResizableBuffer(pool, null_bytes, &null_bitmap));
 
-  null_bitmap = std::make_shared<PoolBuffer>(pool);
-  RETURN_NOT_OK(null_bitmap->Resize(null_bytes));
-
+  // Padding zeroed by AllocateResizableBuffer
   memset(null_bitmap->mutable_data(), 0, static_cast<size_t>(null_bytes));
   *out = null_bitmap;
   return Status::OK();
@@ -543,8 +542,8 @@ Status CastBuffer(const std::shared_ptr<DataType>& in_type,
 template <typename FromType, typename ToType>
 Status StaticCastBuffer(const Buffer& input, const int64_t length, MemoryPool* pool,
                         std::shared_ptr<Buffer>* out) {
-  auto result = std::make_shared<PoolBuffer>(pool);
-  RETURN_NOT_OK(result->Resize(sizeof(ToType) * length));
+  std::shared_ptr<Buffer> result;
+  RETURN_NOT_OK(AllocateBuffer(pool, sizeof(ToType) * length, &result));
 
   auto in_values = reinterpret_cast<const FromType*>(input.data());
   auto out_values = reinterpret_cast<ToType*>(result->mutable_data());
@@ -582,8 +581,8 @@ Status CopyStridedArray(PyArrayObject* arr, const int64_t length, MemoryPool* po
   using T = typename traits::T;
 
   // Strided, must copy into new contiguous memory
-  auto new_buffer = std::make_shared<PoolBuffer>(pool);
-  RETURN_NOT_OK(new_buffer->Resize(sizeof(T) * length));
+  std::shared_ptr<Buffer> new_buffer;
+  RETURN_NOT_OK(AllocateBuffer(pool, sizeof(T) * length, &new_buffer));
 
   const int64_t stride = PyArray_STRIDES(arr)[0];
   if (stride % sizeof(T) == 0) {
@@ -623,8 +622,8 @@ inline Status NumPyConverter::ConvertData(std::shared_ptr<Buffer>* data) {
 template <>
 inline Status NumPyConverter::ConvertData<BooleanType>(std::shared_ptr<Buffer>* data) {
   int64_t nbytes = BitUtil::BytesForBits(length_);
-  auto buffer = std::make_shared<PoolBuffer>(pool_);
-  RETURN_NOT_OK(buffer->Resize(nbytes));
+  std::shared_ptr<Buffer> buffer;
+  RETURN_NOT_OK(AllocateBuffer(pool_, nbytes, &buffer));
 
   Ndarray1DIndexer<uint8_t> values(arr_);
 
@@ -698,8 +697,8 @@ inline Status NumPyConverter::ConvertData<Date64Type>(std::shared_ptr<Buffer>* d
     // separately here from int64_t to int32_t, because this data is not
     // supported in compute::Cast
     if (date_dtype->meta.base == NPY_FR_D) {
-      auto result = std::make_shared<PoolBuffer>(pool_);
-      RETURN_NOT_OK(result->Resize(sizeof(int64_t) * length_));
+      std::shared_ptr<Buffer> result;
+      RETURN_NOT_OK(AllocateBuffer(pool_, sizeof(int64_t) * length_, &result));
 
       auto in_values = reinterpret_cast<const int64_t*>((*data)->data());
       auto out_values = reinterpret_cast<int64_t*>(result->mutable_data());
@@ -1068,8 +1067,8 @@ Status NumPyConverter::ConvertBooleans() {
   }
 
   int64_t nbytes = BitUtil::BytesForBits(length_);
-  auto data = std::make_shared<PoolBuffer>(pool_);
-  RETURN_NOT_OK(data->Resize(nbytes));
+  std::shared_ptr<Buffer> data;
+  RETURN_NOT_OK(AllocateBuffer(pool_, nbytes, &data));
   uint8_t* bitmap = data->mutable_data();
   memset(bitmap, 0, nbytes);
 
@@ -1128,6 +1127,10 @@ Status NumPyConverter::ConvertObjectsInfer() {
     } else if (PyObject_IsInstance(obj, decimal_type_.obj()) == 1) {
       return ConvertDecimals();
     } else if (PyList_Check(obj)) {
+      if (PyList_Size(obj) == 0 && i < length_ - 1) {
+        // Iterate until we find a non-empty list or the enclosing sequence is empty
+        continue;
+      }
       std::shared_ptr<DataType> inferred_type;
       RETURN_NOT_OK(InferArrowType(obj, &inferred_type));
       return ConvertLists(inferred_type);
@@ -1273,7 +1276,8 @@ inline Status NumPyConverter::ConvertTypedLists(const std::shared_ptr<DataType>&
         ss << inferred_type->ToString() << " cannot be converted to " << type->ToString();
         return Status::TypeError(ss.str());
       }
-      return AppendPySequence(object, size, type, value_builder);
+      return AppendPySequence(object, size, type, value_builder,
+                              use_pandas_null_sentinels_);
     } else {
       return Status::TypeError("Unsupported Python type for list items");
     }
@@ -1368,7 +1372,8 @@ inline Status NumPyConverter::ConvertTypedLists<NPY_OBJECT, BinaryType>(
         ss << inferred_type->ToString() << " cannot be converted to BINARY.";
         return Status::TypeError(ss.str());
       }
-      return AppendPySequence(object, size, type, value_builder);
+      return AppendPySequence(object, size, type, value_builder,
+                              use_pandas_null_sentinels_);
     } else {
       return Status::TypeError("Unsupported Python type for list items");
     }
@@ -1425,7 +1430,8 @@ inline Status NumPyConverter::ConvertTypedLists<NPY_OBJECT, StringType>(
         ss << inferred_type->ToString() << " cannot be converted to STRING.";
         return Status::TypeError(ss.str());
       }
-      return AppendPySequence(object, size, type, value_builder);
+      return AppendPySequence(object, size, type, value_builder,
+                              use_pandas_null_sentinels_);
     } else {
       return Status::TypeError("Unsupported Python type for list items");
     }

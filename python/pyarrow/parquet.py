@@ -16,6 +16,7 @@
 # under the License.
 
 from collections import defaultdict
+from concurrent import futures
 import os
 import inspect
 import json
@@ -32,9 +33,11 @@ except ImportError:
 import numpy as np
 
 from pyarrow.filesystem import FileSystem, LocalFileSystem, S3FSWrapper
-from pyarrow._parquet import (ParquetReader, FileMetaData,  # noqa
-                              RowGroupMetaData, ParquetSchema)
-import pyarrow._parquet as _parquet  # noqa
+from pyarrow._parquet import (ParquetReader, RowGroupStatistics,  # noqa
+                              FileMetaData, RowGroupMetaData,
+                              ColumnChunkMetaData,
+                              ParquetSchema, ColumnSchema)
+import pyarrow._parquet as _parquet
 import pyarrow.lib as lib
 import pyarrow as pa
 
@@ -324,6 +327,13 @@ schema : arrow Schema
         if self.schema_changed:
             table = _sanitize_table(table, self.schema, self.flavor)
         assert self.is_open
+
+        if not table.schema.equals(self.schema):
+            msg = ('Table schema does not match schema used to create file: '
+                   '\ntable:\n{0!s} vs. \nfile:\n{1!s}'.format(table.schema,
+                                                               self.schema))
+            raise ValueError(msg)
+
         self.writer.write_table(table, row_group_size=row_group_size)
 
     def close(self):
@@ -580,6 +590,49 @@ class ParquetPartitions(object):
 
         return self.levels[level].get_index(key)
 
+    def filter_accepts_partition(self, part_key, filter, level):
+        p_column, p_value_index = part_key
+        f_column, op, f_value = filter
+        if p_column != f_column:
+            return True
+
+        f_type = type(f_value)
+
+        if isinstance(f_value, set):
+            if not f_value:
+                raise ValueError("Cannot use empty set as filter value")
+            if op not in {'in', 'not in'}:
+                raise ValueError("Op '%s' not supported with set value",
+                                 op)
+            if len(set([type(item) for item in f_value])) != 1:
+                raise ValueError("All elements of set '%s' must be of"
+                                 " same type", f_value)
+            f_type = type(next(iter(f_value)))
+
+        p_value = f_type((self.levels[level]
+                          .dictionary[p_value_index]
+                          .as_py()))
+
+        if op == "=" or op == "==":
+            return p_value == f_value
+        elif op == "!=":
+            return p_value != f_value
+        elif op == '<':
+            return p_value < f_value
+        elif op == '>':
+            return p_value > f_value
+        elif op == '<=':
+            return p_value <= f_value
+        elif op == '>=':
+            return p_value >= f_value
+        elif op == 'in':
+            return p_value in f_value
+        elif op == 'not in':
+            return p_value not in f_value
+        else:
+            raise ValueError("'%s' is not a valid operator in predicates.",
+                             filter[1])
+
 
 def is_path(x):
     return (isinstance(x, six.string_types)
@@ -591,22 +644,31 @@ class ParquetManifest(object):
 
     """
     def __init__(self, dirpath, filesystem=None, pathsep='/',
-                 partition_scheme='hive'):
+                 partition_scheme='hive', metadata_nthreads=1):
         self.filesystem = filesystem or _get_fs_from_path(dirpath)
         self.pathsep = pathsep
         self.dirpath = dirpath
         self.partition_scheme = partition_scheme
         self.partitions = ParquetPartitions()
         self.pieces = []
+        self._metadata_nthreads = metadata_nthreads
+        self._thread_pool = futures.ThreadPoolExecutor(
+            max_workers=metadata_nthreads)
 
         self.common_metadata_path = None
         self.metadata_path = None
 
         self._visit_level(0, self.dirpath, [])
 
+        # Due to concurrency, pieces will potentially by out of order if the
+        # dataset is partitioned so we sort them to yield stable results
+        self.pieces.sort(key=lambda piece: piece.path)
+
         if self.common_metadata_path is None:
             # _common_metadata is a subset of _metadata
             self.common_metadata_path = self.metadata_path
+
+        self._thread_pool.shutdown()
 
     def _visit_level(self, level, base_path, part_keys):
         fs = self.filesystem
@@ -642,17 +704,30 @@ class ParquetManifest(object):
             self._push_pieces(filtered_files, part_keys)
 
     def _should_silently_exclude(self, file_name):
-        return (file_name.endswith('.crc') or
+        return (file_name.endswith('.crc') or  # Checksums
+                file_name.startswith('.') or  # Hidden files
                 file_name in EXCLUDED_PARQUET_PATHS)
 
     def _visit_directories(self, level, directories, part_keys):
+        futures_list = []
         for path in directories:
             head, tail = _path_split(path, self.pathsep)
             name, key = _parse_hive_partition(tail)
 
             index = self.partitions.get_index(level, name, key)
             dir_part_keys = part_keys + [(name, index)]
-            self._visit_level(level + 1, path, dir_part_keys)
+            # If you have less threads than levels, the wait call will block
+            # indefinitely due to multiple waits within a thread.
+            if level < self._metadata_nthreads:
+                future = self._thread_pool.submit(self._visit_level,
+                                                  level + 1,
+                                                  path,
+                                                  dir_part_keys)
+                futures_list.append(future)
+            else:
+                self._visit_level(level + 1, path, dir_part_keys)
+        if futures_list:
+            futures.wait(futures_list)
 
     def _parse_partition(self, dirname):
         if self.partition_scheme == 'hive':
@@ -715,10 +790,14 @@ class ParquetDataset(object):
         List of filters to apply, like ``[('x', '=', 0), ...]``. This
         implements partition-level (hive) filtering only, i.e., to prevent the
         loading of some files of the dataset.
+    metadata_nthreads: int, default 1
+        How many threads to allow the thread pool which is used to read the
+        dataset metadata. Increasing this is helpful to read partitioned
+        datasets.
     """
     def __init__(self, path_or_paths, filesystem=None, schema=None,
                  metadata=None, split_row_groups=False, validate_schema=True,
-                 filters=None):
+                 filters=None, metadata_nthreads=1):
         if filesystem is None:
             a_path = path_or_paths
             if isinstance(a_path, list):
@@ -732,7 +811,8 @@ class ParquetDataset(object):
         (self.pieces,
          self.partitions,
          self.common_metadata_path,
-         self.metadata_path) = _make_manifest(path_or_paths, self.fs)
+         self.metadata_path) = _make_manifest(
+            path_or_paths, self.fs, metadata_nthreads=metadata_nthreads)
 
         if self.common_metadata_path is not None:
             with self.fs.open(self.common_metadata_path) as f:
@@ -865,53 +945,10 @@ class ParquetDataset(object):
         return open_file
 
     def _filter(self, filters):
-        def filter_accepts_partition(part_key, filter, level):
-
-            p_column, p_value_index = part_key
-            f_column, op, f_value = filter
-            if p_column != f_column:
-                return True
-
-            f_type = type(f_value)
-
-            if isinstance(f_value, set):
-                if not f_value:
-                    raise ValueError("Cannot use empty set as filter value")
-                if op not in {'in', 'not in'}:
-                    raise ValueError("Op '%s' not supported with set value",
-                                     op)
-                if len(set([type(item) for item in f_value])) != 1:
-                    raise ValueError("All elements of set '%s' must be of"
-                                     " same type", f_value)
-                f_type = type(next(iter(f_value)))
-
-            p_value = f_type((self.partitions
-                                  .levels[level]
-                                  .dictionary[p_value_index]
-                                  .as_py()))
-
-            if op == "=" or op == "==":
-                return p_value == f_value
-            elif op == "!=":
-                return p_value != f_value
-            elif op == '<':
-                return p_value < f_value
-            elif op == '>':
-                return p_value > f_value
-            elif op == '<=':
-                return p_value <= f_value
-            elif op == '>=':
-                return p_value >= f_value
-            elif op == 'in':
-                return p_value in f_value
-            elif op == 'not in':
-                return p_value not in f_value
-            else:
-                raise ValueError("'%s' is not a valid operator in predicates.",
-                                 filter[1])
+        accepts_filter = self.partitions.filter_accepts_partition
 
         def one_filter_accepts(piece, filter):
-            return all(filter_accepts_partition(part_key, filter, level)
+            return all(accepts_filter(part_key, filter, level)
                        for level, part_key in enumerate(piece.partition_keys))
 
         def all_filters_accept(piece):
@@ -939,18 +976,19 @@ def _ensure_filesystem(fs):
         return fs
 
 
-def _make_manifest(path_or_paths, fs, pathsep='/'):
+def _make_manifest(path_or_paths, fs, pathsep='/', metadata_nthreads=1):
     partitions = None
     common_metadata_path = None
     metadata_path = None
 
-    if len(path_or_paths) == 1:
+    if isinstance(path_or_paths, list) and len(path_or_paths) == 1:
         # Dask passes a directory as a list of length 1
         path_or_paths = path_or_paths[0]
 
     if is_path(path_or_paths) and fs.isdir(path_or_paths):
         manifest = ParquetManifest(path_or_paths, filesystem=fs,
-                                   pathsep=fs.pathsep)
+                                   pathsep=fs.pathsep,
+                                   metadata_nthreads=metadata_nthreads)
         common_metadata_path = manifest.common_metadata_path
         metadata_path = manifest.metadata_path
         pieces = manifest.pieces
@@ -1004,9 +1042,8 @@ def read_table(source, columns=None, nthreads=1, metadata=None,
                use_pandas_metadata=False):
     if is_path(source):
         fs = _get_fs_from_path(source)
-
-        if fs.isdir(source):
-            return fs.read_parquet(source, columns=columns, metadata=metadata)
+        return fs.read_parquet(source, columns=columns, metadata=metadata,
+                               use_pandas_metadata=use_pandas_metadata)
 
     pf = ParquetFile(source, metadata=metadata)
     return pf.read(columns=columns, nthreads=nthreads,
@@ -1137,6 +1174,12 @@ def write_to_dataset(table, root_path, partition_cols=None,
         data_cols = df.columns.drop(partition_cols)
         if len(data_cols) == 0:
             raise ValueError("No data left to save outside partition columns")
+        subschema = table.schema
+        # ARROW-2891: Ensure the output_schema is preserved when writing a
+        # partitioned dataset
+        for partition_col in partition_cols:
+            subschema = subschema.remove(
+                subschema.get_field_index(partition_col))
         for keys, subgroup in data_df.groupby(partition_keys):
             if not isinstance(keys, tuple):
                 keys = (keys,)
@@ -1144,7 +1187,8 @@ def write_to_dataset(table, root_path, partition_cols=None,
                 ["{colname}={value}".format(colname=name, value=val)
                  for name, val in zip(partition_cols, keys)])
             subtable = Table.from_pandas(subgroup,
-                                         preserve_index=preserve_index)
+                                         preserve_index=preserve_index,
+                                         schema=subschema)
             prefix = "/".join([root_path, subdir])
             _mkdir_if_not_exists(fs, prefix)
             outfile = compat.guid() + ".parquet"

@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -17,22 +15,39 @@
 # specific language governing permissions and limitations
 # under the License.
 
-export ARROW_TEST_NN_HOST=arrow-hdfs
-export ARROW_TEST_IMPALA_HOST=$ARROW_TEST_NN_HOST
-export ARROW_TEST_IMPALA_PORT=21050
-export ARROW_TEST_WEBHDFS_PORT=50070
-export ARROW_TEST_WEBHDFS_USER=ubuntu
-
-docker stop $ARROW_TEST_NN_HOST
-docker rm $ARROW_TEST_NN_HOST
-
-docker run -d -it --name $ARROW_TEST_NN_HOST \
-       -v $PWD:/io \
-       --hostname $ARROW_TEST_NN_HOST \
-       --shm-size=2gb \
-       -p $ARROW_TEST_WEBHDFS_PORT -p $ARROW_TEST_IMPALA_PORT \
-       arrow-hdfs-test
-
-while ! docker exec $ARROW_TEST_NN_HOST impala-shell -q 'SELECT VERSION()'; do
-    sleep 1
-done
+MACOSX_DEPLOYMENT_TARGET:
+- '10.9'
+boost_cpp:
+- 1.67.0
+c_compiler:
+- toolchain_c
+cxx_compiler:
+- toolchain_cxx
+lz4_c:
+- 1.8.1
+macos_machine:
+- x86_64-apple-darwin13.4.0
+macos_min_version:
+- '10.9'
+pin_run_as_build:
+  boost-cpp:
+    max_pin: x.x.x
+  lz4-c:
+    max_pin: x.x.x
+  python:
+    min_pin: x.x
+    max_pin: x.x
+  snappy:
+    max_pin: x.x.x
+  zlib:
+    max_pin: x.x
+  zstd:
+    max_pin: x.x.x
+python:
+- '3.5'
+snappy:
+- 1.1.7
+zlib:
+- '1.2'
+zstd:
+- 1.3.3

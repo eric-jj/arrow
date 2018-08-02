@@ -141,14 +141,10 @@ endif()
 # Headers: top level
 install(FILES
   common.h
-  "${OUTPUT_DIR}/common_generated.h"
   compat.h
   client.h
   events.h
-  plasma.h
-  "${OUTPUT_DIR}/plasma_generated.h"
   plasma_queue.h
-  protocol.h
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/plasma")
 
 # Plasma store

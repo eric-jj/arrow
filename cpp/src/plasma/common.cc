@@ -23,6 +23,8 @@
 
 #include "plasma/plasma_generated.h"
 
+namespace fb = plasma::flatbuf;
+
 namespace plasma {
 
 using arrow::Status;
@@ -123,24 +125,8 @@ bool UniqueID::operator==(const UniqueID& rhs) const {
   return std::memcmp(data(), rhs.data(), kUniqueIDSize) == 0;
 }
 
-Status plasma_error_status(PlasmaError plasma_error) {
-  switch (plasma_error) {
-    case PlasmaError::OK:
-      return Status::OK();
-    case PlasmaError::ObjectExists:
-      return Status::PlasmaObjectExists("object already exists in the plasma store");
-    case PlasmaError::ObjectNonexistent:
-      return Status::PlasmaObjectNonexistent("object does not exist in the plasma store");
-    case PlasmaError::OutOfMemory:
-      return Status::PlasmaStoreFull("object does not fit in the plasma store");
-    default:
-      ARROW_LOG(FATAL) << "unknown plasma error code " << static_cast<int>(plasma_error);
-  }
-  return Status::OK();
-}
-
-ARROW_EXPORT ObjectStatus ObjectStatusLocal = ObjectStatus::Local;
-ARROW_EXPORT ObjectStatus ObjectStatusRemote = ObjectStatus::Remote;
+ARROW_EXPORT fb::ObjectStatus ObjectStatusLocal = fb::ObjectStatus::Local;
+ARROW_EXPORT fb::ObjectStatus ObjectStatusRemote = fb::ObjectStatus::Remote;
 
 const PlasmaStoreInfo* plasma_config;
 

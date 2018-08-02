@@ -364,6 +364,21 @@ def test_torch_serialization(large_buffer):
         serialization_roundtrip(obj, large_buffer,
                                 context=serialization_context)
 
+    tensor_requiring_grad = torch.randn(10, 10, requires_grad=True)
+    serialization_roundtrip(tensor_requiring_grad, large_buffer,
+                            context=serialization_context)
+
+
+@pytest.mark.skipif(not torch or not torch.cuda.is_available(),
+                    reason="requires pytorch with CUDA")
+def test_torch_cuda():
+    # ARROW-2920: This used to segfault if torch is not imported
+    # before pyarrow
+    # Note that this test will only catch the issue if it is run
+    # with a pyarrow that has been built in the manylinux1 environment
+    torch.nn.Conv2d(64, 2, kernel_size=3, stride=1,
+                    padding=1, bias=False).cuda()
+
 
 def test_numpy_immutable(large_buffer):
     obj = np.zeros([10])

@@ -34,21 +34,32 @@ class ApacheArrowPackageTask < PackageTask
   def detect_version(release_time)
     pom_xml_path = File.join(arrow_source_dir, "java", "pom.xml")
     version = File.read(pom_xml_path).scan(/^  <version>(.+?)<\/version>/)[0][0]
+    version = ENV['ARROW_VERSION'] || version  #try to read from env
     formatted_release_time = release_time.strftime("%Y%m%d")
     version.gsub(/-SNAPSHOT\z/) {".#{formatted_release_time}"}
   end
 
   def define_archive_task
     file @archive_name do
-      if /\A\d+\.\d+\.\d+\z/ =~ @version
-        download_archive
+      case @version
+      when /\A\d+\.\d+\.\d+-rc\d+\z/
+        download_rc_archive
+      when /\A\d+\.\d+\.\d+\z/
+        download_released_archive
       else
         build_archive
       end
     end
   end
 
-  def download_archive
+  def download_rc_archive
+    base_url = "https://dist.apache.org/repos/dist/dev/arrow"
+    archive_name_no_rc = @archive_name.gsub(/-rc\d+(\.tar\.gz)\z/, "\\1")
+    url = "#{base_url}/#{@package}-#{@version}/#{archive_name_no_rc}"
+    download(url, @archive_name)
+  end
+
+  def download_released_archive
     mirror_base_url = "https://www.apache.org/dyn/closer.cgi/arrow"
     mirror_list_url = "#{mirror_base_url}/arrow-#{@version}/#{@archive_name}"
     open(mirror_list_url) do |response|

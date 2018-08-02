@@ -176,11 +176,11 @@ template <typename Type>
 struct HashDictionary<Type, enable_if_has_c_type<Type>> {
   using T = typename Type::c_type;
 
-  explicit HashDictionary(MemoryPool* pool)
-      : pool(pool), buffer(std::make_shared<PoolBuffer>(pool)), size(0), capacity(0) {}
+  explicit HashDictionary(MemoryPool* pool) : pool(pool), size(0), capacity(0) {}
 
   Status Init() {
     this->size = 0;
+    RETURN_NOT_OK(AllocateResizableBuffer(this->pool, 0, &this->buffer));
     return Resize(kInitialHashTableSize);
   }
 
@@ -289,6 +289,7 @@ class HashTableKernel<
     // TODO(wesm): handle null being in the dictionary
     auto dict_data = dict_.buffer;
     RETURN_NOT_OK(dict_data->Resize(dict_.size * sizeof(T), false));
+    dict_data->ZeroPadding();
 
     *out = ArrayData::Make(type_, dict_.size, {nullptr, dict_data}, 0);
     return Status::OK();

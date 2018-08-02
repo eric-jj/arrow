@@ -43,6 +43,7 @@
 #include "arrow/python/iterators.h"
 #include "arrow/python/numpy_convert.h"
 #include "arrow/python/platform.h"
+#include "arrow/python/pyarrow.h"
 #include "arrow/python/util/datetime.h"
 
 constexpr int32_t kMaxRecursionDepth = 100;
@@ -79,7 +80,7 @@ class SequenceBuilder {
   Status AppendNone() {
     RETURN_NOT_OK(offsets_.Append(0));
     RETURN_NOT_OK(types_.Append(0));
-    return nones_.AppendToBitmap(false);
+    return nones_.AppendNull();
   }
 
   Status Update(int64_t offset, int8_t* tag) {
@@ -90,7 +91,7 @@ class SequenceBuilder {
     RETURN_NOT_OK(internal::CastSize(offset, &offset32));
     RETURN_NOT_OK(offsets_.Append(offset32));
     RETURN_NOT_OK(types_.Append(*tag));
-    return nones_.AppendToBitmap(true);
+    return nones_.Append(true);
   }
 
   template <typename BuilderType, typename T>
@@ -218,7 +219,7 @@ class SequenceBuilder {
     if (tag != -1) {
       fields_[tag] = ::arrow::field(name, out->type());
       RETURN_NOT_OK(out->Finish(&children_[tag]));
-      RETURN_NOT_OK(nones_.AppendToBitmap(true));
+      RETURN_NOT_OK(nones_.Append(true));
       type_ids_.push_back(tag);
     }
     return Status::OK();
@@ -239,7 +240,7 @@ class SequenceBuilder {
       fields_[tag] = ::arrow::field("", type);
       children_[tag] = std::shared_ptr<StructArray>(
           new StructArray(type, list_array->length(), {list_array}));
-      RETURN_NOT_OK(nones_.AppendToBitmap(true));
+      RETURN_NOT_OK(nones_.Append(true));
       type_ids_.push_back(tag);
     } else {
       DCHECK_EQ(offsets.size(), 1);
@@ -279,10 +280,13 @@ class SequenceBuilder {
     RETURN_NOT_OK(offsets_.Finish(&offsets_array));
     const auto& offsets = checked_cast<const Int32Array&>(*offsets_array);
 
+    std::shared_ptr<Array> nones_array;
+    RETURN_NOT_OK(nones_.Finish(&nones_array));
+    const auto& nones = checked_cast<const BooleanArray&>(*nones_array);
+
     auto type = ::arrow::union_(fields_, type_ids_, UnionMode::DENSE);
     out->reset(new UnionArray(type, types.length(), children_, types.values(),
-                              offsets.values(), nones_.null_bitmap(),
-                              nones_.null_count()));
+                              offsets.values(), nones.null_bitmap(), nones.null_count()));
     return Status::OK();
   }
 
@@ -292,7 +296,7 @@ class SequenceBuilder {
   Int8Builder types_;
   Int32Builder offsets_;
 
-  NullBuilder nones_;
+  BooleanBuilder nones_;
   BooleanBuilder bools_;
   Int64Builder ints_;
   Int64Builder py2_ints_;
@@ -592,7 +596,7 @@ Status SerializeSequences(PyObject* context, std::vector<PyObject*> sequences,
         "This object exceeds the maximum recursion depth. It may contain itself "
         "recursively.");
   }
-  SequenceBuilder builder(nullptr);
+  SequenceBuilder builder;
   std::vector<PyObject*> sublists, subtuples, subdicts, subsets;
   for (const auto& sequence : sequences) {
     auto visit = [&](PyObject* obj) {
@@ -714,6 +718,26 @@ Status SerializeObject(PyObject* context, PyObject* sequence, SerializedPyObject
   RETURN_NOT_OK(SerializeSequences(context, sequences, 0, &array, out));
   out->batch = MakeBatch(array);
   return Status::OK();
+}
+
+Status SerializeTensor(std::shared_ptr<Tensor> tensor, SerializedPyObject* out) {
+  std::shared_ptr<Array> array;
+  SequenceBuilder builder;
+  RETURN_NOT_OK(builder.AppendTensor(static_cast<int32_t>(out->tensors.size())));
+  out->tensors.push_back(tensor);
+  RETURN_NOT_OK(builder.Finish(nullptr, nullptr, nullptr, nullptr, &array));
+  out->batch = MakeBatch(array);
+  return Status::OK();
+}
+
+Status WriteTensorHeader(std::shared_ptr<DataType> dtype,
+                         const std::vector<int64_t>& shape, int64_t tensor_num_bytes,
+                         io::OutputStream* dst) {
+  auto empty_tensor = std::make_shared<Tensor>(
+      dtype, std::make_shared<Buffer>(nullptr, tensor_num_bytes), shape);
+  SerializedPyObject serialized_tensor;
+  RETURN_NOT_OK(SerializeTensor(empty_tensor, &serialized_tensor));
+  return serialized_tensor.WriteTo(dst);
 }
 
 Status SerializedPyObject::WriteTo(io::OutputStream* dst) {

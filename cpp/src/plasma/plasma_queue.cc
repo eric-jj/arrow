@@ -54,6 +54,8 @@
 
 namespace plasma {
 
+using flatbuf::PlasmaError;
+
 PlasmaQueueWriter::PlasmaQueueWriter(uint8_t* buffer, uint64_t buffer_size) :
   buffer_(buffer),
   buffer_size_(buffer_size),
@@ -152,7 +154,7 @@ bool PlasmaQueueWriter::Allocate(uint64_t& start_offset, uint32_t data_size) {
   return true;
 }
 
-PlasmaError PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_t& offset, uint64_t& seq_id) {
+Status PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_t& offset, uint64_t& seq_id) {
   uint64_t start_offset = sizeof(QueueHeader);
   bool should_create_block = FindStartOffset(data_size, start_offset);
 
@@ -165,7 +167,7 @@ PlasmaError PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_
   // evicting some existing blocks. Try to allocate the space for new item.
   bool succeed = Allocate(start_offset, required_size);
   if (!succeed) {
-    return PlasmaError::OutOfMemory;
+    return Status::OutOfMemory("could not allocate space in queue buffer");
   }
 
   seq_id_++;
@@ -212,7 +214,7 @@ PlasmaError PlasmaQueueWriter::Append(uint8_t* data, uint32_t data_size, uint64_
     next_index_in_block_++;    
   }
 
-  return PlasmaError::OK;
+  return Status::OK();
 }
 
 }  // namespace plasma

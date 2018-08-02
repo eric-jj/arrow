@@ -56,7 +56,7 @@ cdef extern from "plasma/common.h" nogil:
     cdef struct CObjectRequest" plasma::ObjectRequest":
         CUniqueID object_id
         int type
-        int status
+        int location
 
 
 cdef extern from "plasma/common.h":
@@ -66,8 +66,9 @@ cdef extern from "plasma/common.h":
         PLASMA_QUERY_LOCAL"plasma::ObjectRequestType::PLASMA_QUERY_LOCAL",
         PLASMA_QUERY_ANYWHERE"plasma::ObjectRequestType::PLASMA_QUERY_ANYWHERE"
 
-    cdef int ObjectStatusLocal"plasma::ObjectStatusLocal"
-    cdef int ObjectStatusRemote"plasma::ObjectStatusRemote"
+    cdef enum ObjectLocation:
+        ObjectStatusLocal"plasma::ObjectLocation::Local"
+        ObjectStatusRemote"plasma::ObjectLocation::Remote"
 
 cdef extern from "plasma/client.h" nogil:
 
@@ -112,6 +113,8 @@ cdef extern from "plasma/client.h" nogil:
 
         CStatus Transfer(const char* addr, int port,
                          const CUniqueID& object_id)
+
+        CStatus Delete(const c_vector[CUniqueID] object_ids)
 
         # Interfaces that are related to plasma queue.
         CStatus CreateQueue(const CUniqueID& object_id, int64_t data_size,
@@ -234,7 +237,7 @@ cdef class PlasmaBuffer(Buffer):
 
         If the plasma client has been shut down, then don't do anything.
         """
-        self.client.release(self.object_id)
+        self.client._release(self.object_id)
 
 
 cdef class PlasmaQueueItemBuffer(Buffer):
@@ -654,7 +657,7 @@ cdef class PlasmaClient:
         with nogil:
             check_status(self.client.get().Seal(object_id.data))
 
-    def release(self, ObjectID object_id):
+    def _release(self, ObjectID object_id):
         """
         Notify Plasma that the object is no longer needed.
 
@@ -798,8 +801,8 @@ cdef class PlasmaClient:
         for i in range(len(object_ids)):
             if num_returned == num_to_return:
                 break
-            if (object_requests[i].status == ObjectStatusLocal or
-                    object_requests[i].status == ObjectStatusRemote):
+            if (object_requests[i].location == ObjectStatusLocal or
+                    object_requests[i].location == ObjectStatusRemote):
                 ready_ids.append(
                     ObjectID(object_requests[i].object_id.binary()))
                 waiting_ids.discard(
@@ -845,6 +848,22 @@ cdef class PlasmaClient:
         """
         with nogil:
             check_status(self.client.get().Disconnect())
+
+    def delete(self, object_ids):
+        """
+        Delete the objects with the given IDs from other object store.
+
+        Parameters
+        ----------
+        object_ids : list
+            A list of strings used to identify the objects.
+        """
+        cdef c_vector[CUniqueID] ids
+        cdef ObjectID object_id
+        for object_id in object_ids:
+            ids.push_back(object_id.data)
+        with nogil:
+            check_status(self.client.get().Delete(ids))
 
 
 def connect(store_socket_name, manager_socket_name, int release_delay,
