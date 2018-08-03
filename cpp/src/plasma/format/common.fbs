@@ -35,3 +35,16 @@ table ObjectInfo {
   is_deletion: bool;
 }
 
+table PlasmaQueueItemInfo {  
+  object_id: string; 
+  // Index of the memory segment (= memory mapped file) that
+  // this queue item is allocated in.
+  segment_index: int;
+  // Sequence ID for queue item.
+  seq_id: ulong;
+  // The offset in bytes in the memory mapped file of the data.
+  data_offset: ulong;
+  // The size in bytes of the data.
+  data_size: ulong;
+}
+
